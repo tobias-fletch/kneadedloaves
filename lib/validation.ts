@@ -17,13 +17,16 @@ export const productSchema = z.object({
 });
 
 export const orderSchema = z.object({
+  orderWindowId: z.string().min(1).max(100),
+  paymentProvider: z.enum(["STRIPE", "PAYPAL"]),
+  checkoutKey: z.string().uuid(),
   customerEmail: z.string().trim().email().max(254),
   customerName: z.string().trim().min(2).max(120),
   customerPhone: z.string().max(40).optional(),
   fulfillmentType: z.enum(["DELIVERY", "PICKUP"]),
   deliveryZoneId: z.string().optional(),
   pickupLocationId: z.string().optional(),
-  deliveryAddress: z.string().max(500).optional(),
+  deliveryAddress: z.string().trim().min(10).max(500).optional(),
   deliveryZip: z.string().optional()
 }).superRefine((value, ctx) => {
   if (value.fulfillmentType === "DELIVERY" && (!value.deliveryAddress?.trim() || !/^\d{5}$/.test(value.deliveryZip || ""))) {

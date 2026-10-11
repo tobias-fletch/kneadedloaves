@@ -7,6 +7,6 @@ node_modules
 .postgres-data
 .npm-cache
 backups
-uploads
+/uploads
 *.log
 *.tsbuildinfo

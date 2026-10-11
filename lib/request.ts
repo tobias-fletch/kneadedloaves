@@ -30,3 +30,18 @@ export async function rateLimit(request: Request, scope: string, limit = 30, ide
   });
   return result.count <= limit;
 }
+
+export async function readBody(request: Request, maximum: number): Promise<Buffer> {
+  const reader = request.body?.getReader();
+  if (!reader) return Buffer.alloc(0);
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > maximum) { await reader.cancel(); throw new Error("Request is too large."); }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks);
+}

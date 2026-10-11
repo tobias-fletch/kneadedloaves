@@ -12,7 +12,7 @@ Start-Process -FilePath 'C:\Program Files\PostgreSQL\18\bin\postgres.exe' -Argum
 
 Then run `npm ci`, `npm run prisma:generate`, `npm run prisma:deploy` and `npm run dev -- --hostname 127.0.0.1`. Open http://127.0.0.1:3000. Keep the existing `.env`; it holds the encryption key for saved settings. Do not replace it with the example file.
 
-For a fresh installation, copy `.env.example`, configure PostgreSQL and generate a random encryption key before saving credentials. Sample seeding (`npm run prisma:seed`) is optional for a disposable development database only; it is blocked in production.
+For a fresh installation, copy `.env.example`, configure PostgreSQL and generate a random encryption key before saving credentials. Development menu seeding (`npm run prisma:seed`) creates only missing inactive drafts of the owner-confirmed menu; it is blocked in production and never overwrites existing products.
 
 Development-only sample logins from the original seed remain `admin@bakery.local` / `admin12345` and `customer@example.com` / `customer12345`. Change them before launch. They are not displayed in the app and those passwords are rejected in production.
 
@@ -30,8 +30,6 @@ Development uses `.next-dev` and production builds use `.next`, avoiding cache c
 
 ## Launch status
 
-Stripe integration is explicitly deferred. Production checkout is paused until payment completion, abandonment, refunds and webhook verification are implemented. Local development retains the existing Stripe behavior if a key is configured; do not use real payment credentials for testing.
+Hosted Stripe and server-side PayPal checkout, verified webhooks, transactional reservations, selectable Eastern-time weekend windows and Netlify Blobs photo storage are implemented. Checkout stays off until explicit business settings, tax handling, provider configuration and live-readiness tests are verified.
 
-SMTP code, queueing and password recovery are implemented; real delivery needs provider credentials and verification. Automatic social publishing is not connected; approved drafts can be published manually. Hosting, DNS/TLS and provider accounts have not been provisioned.
-
-See [PRODUCTION-READINESS.md](./PRODUCTION-READINESS.md) for verified changes and [DEPLOYMENT.md](./DEPLOYMENT.md) for release, backup, restore and owner setup.
+The free-hosting target is the existing Netlify site plus an isolated Neon Free database. No paid plan or automatic upgrade is configured. Real deployment, data/photo migration, SMTP and provider end-to-end verification are still required. Read [PRODUCTION-READINESS.md](./PRODUCTION-READINESS.md), [DEPLOYMENT.md](./DEPLOYMENT.md) and [PHOTO-STORAGE.md](./PHOTO-STORAGE.md) before enabling checkout.

@@ -27,6 +27,21 @@ enum OrderStatus {
   CANCELLED
 }
 
+enum PaymentProvider {
+  STRIPE
+  PAYPAL
+}
+
+enum PaymentState {
+  PENDING
+  PAID
+  FAILED
+  EXPIRED
+  PARTIALLY_REFUNDED
+  REFUNDED
+  REVIEW
+}
+
 enum SocialPlatform {
   INSTAGRAM
   TIKTOK
@@ -146,13 +161,29 @@ model Order {
   customerPhone         String?
   status                OrderStatus     @default(PENDING)
   totalCents            Int
+  deliveryFeeCents      Int               @default(0)
+  taxCents              Int               @default(0)
   fulfillmentType       FulfillmentType
   deliveryZoneId        String?
   pickupLocationId      String?
   orderWindowId         String?
   deliveryAddress       String?
   fulfillmentInstructions String?
-  stripeCheckoutSessionId String?
+  stripeCheckoutSessionId String?         @unique
+  paymentProvider       PaymentProvider?
+  paymentState          PaymentState      @default(PENDING)
+  providerPaymentId     String?           @unique
+  paypalOrderId         String?           @unique
+  paymentUrl            String?
+  providerRequest       String?
+  paymentReviewReason   String?
+  checkoutKey           String?           @unique
+  checkoutPayloadHash   String?
+  checkoutCartId        String?
+  reservationExpiresAt  DateTime?
+  paidAt                DateTime?
+  refundedCents         Int               @default(0)
+  paymentEvents         PaymentEvent[]
   receiptTokenHash       String?         @unique
   inventoryRestored      Boolean         @default(false)
   user                  User?           @relation(fields: [userId], references: [id])
@@ -162,6 +193,8 @@ model Order {
   items                 OrderItem[]
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
+
+  @@index([reservationExpiresAt])
 }
 
 model OrderItem {
@@ -343,4 +376,13 @@ model EmailJob {
   createdAt DateTime @default(now())
   sentAt DateTime?
   @@index([status, availableAt])
+}
+
+model PaymentEvent {
+  id String @id
+  provider PaymentProvider
+  eventType String
+  orderId String?
+  order Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
 }

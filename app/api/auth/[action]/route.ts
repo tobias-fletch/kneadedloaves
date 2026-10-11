@@ -1,3 +1,4 @@
+import { dispatchQueuedEmail } from "@/lib/email-dispatch";
 import { createHash, randomBytes } from "crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
@@ -36,6 +37,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
         await queueEmail({ dedupeKey: `reset:${tokenHash}`, to: user.email, subject: "Reset your Kneaded Loaves password", body: `Use this private link within one hour to reset your password:\n${base}/reset-password?token=${token}\n\nIf you did not request this, ignore this email.` }, tx);
       });
     }
+    dispatchQueuedEmail();
     return NextResponse.json({ message: "If that address has an account, a password reset email will be sent." });
   }
   const password = passwordSchema.safeParse(body.password);

@@ -21,7 +21,13 @@ jobs:
       APP_URL: http://127.0.0.1:3001
       NEXT_PUBLIC_APP_URL: http://127.0.0.1:3001
       JWT_SECRET: ci-only-secret-never-use-in-production-2026
-      STRIPE_SECRET_KEY: ""
+      BAKERY_INTEGRATION_TESTS: "1"
+      CHECKOUT_ENABLED: "false"
+      CONFIG_ENCRYPTION_KEY: "0101010101010101010101010101010101010101010101010101010101010101"
+      STRIPE_SECRET_KEY: sk_test_synthetic_bakery_qa_only
+      STRIPE_TEST_MODE: "true"
+      STRIPE_WEBHOOK_SECRET: whsec_synthetic_bakery_qa_only
+      PAYPAL_WEBHOOK_ID: qa-fixture
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -32,9 +38,10 @@ jobs:
       - run: npm run prisma:generate
       - run: npm run lint
       - run: npm test
-      - run: npm audit --audit-level=moderate
+      - run: npm run audit:dependencies
       - run: npm run build
-      - run: npm run prisma:deploy
+      - name: Migration preservation and replay
+        run: bash tests/integration-qa/migration-preservation.sh
       - name: Integration tests
         run: |
           npm run dev -- --hostname 127.0.0.1 --port 3001 > /tmp/bakery-test.log 2>&1 &
@@ -42,4 +49,6 @@ jobs:
             curl --fail http://127.0.0.1:3001/api/health && break
             sleep 2
           done
-          npx tsx tests/integration.ts
+          node --import tsx tests/integration.ts
+          node tests/integration-qa/webhook-http.mjs
+          node --import tsx tests/integration-qa/extended.mjs

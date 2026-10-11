@@ -1,31 +1,26 @@
-# Production readiness — September 14, 2026
+# Production readiness
 
-## Completed in this pass
+The existing design, cart, admin and data model are retained. Local implementation does not mean the live bakery can take orders yet.
 
-- Updated dependencies to patched releases, including Next.js 15.5.25. NPM audit reports zero vulnerabilities. Targeted dependency overrides cover PostCSS and deepmerge-ts; recheck on future upgrades.
-- Fixed guest cart isolation, integer quantity validation, concurrent cart changes, delivery ZIP checks and product date eligibility.
-- Serialized order-window capacity checks inside the order transaction. Cancellation restores inventory once and status changes follow an explicit transition table. Payment-related transitions are reserved for the deferred payment integration.
-- Added customer registration, password change/recovery, single-use expiring reset tokens and database-validated sessions that are revoked on password change or logout. Removed displayed demo credentials and reject seed passwords in production.
-- Added cross-origin mutation protection, bounded request bodies, database-backed rate limiting, security headers and sanitized image uploads. New uploaded images require persistent storage.
-- Encrypted saved credentials with authenticated AES-GCM. Migrated existing local stored secrets and saved the encryption key in the ignored local .env.
-- Added private guest receipts and a durable email queue with retries and admin failure visibility. Pending acknowledgements explicitly state payment is unconfirmed. The SMTP worker supports multiple processes with locked claims; SMTP delivery is at-least-once.
-- Added health checks, error pages, noninteractive lint, unit and integration checks, CI, a Docker deployment template, admin provisioning, backups and deployment/rollback instructions.
-- Preserved the existing shop's product, order and stock data. Tests use the separate kneaded_loaves_test database.
+## Implemented
 
-## Verification
+- Hosted Stripe checkout and server-side PayPal order/capture; no raw card handling.
+- Signature-verified webhooks, canonical amount/currency/identity checks, durable event deduplication, protected payment state and refund tracking.
+- Transactional inventory/capacity reservations, saved carts, immutable encrypted provider request snapshots, idempotent retries and explicit unknown-payment review.
+- Guest receipts that never trust browser success flags; admin delivery address, date and provider references.
+- Separate selectable weekend windows, America/New_York parsing, DST validation, Thursday/Friday cutoffs and mandatory capacity.
+- Explicit tax/fee configuration with no invented rate; unknown operational settings keep checkout off.
+- Authenticated bounded image uploads, sanitized WebP, site-wide Netlify Blobs storage and isolated preview namespaces.
+- Confirmed-menu draft seed only; no invented launch schedule, ZIPs, capacity, paid orders or accounts.
+- Free-only Netlify/Neon configuration and deployment instructions. No paid auto-upgrade logic.
 
-- Production build and TypeScript checks passed.
-- ESLint passed without warnings; seven unit/security tests passed.
-- HTTP/database integration tests cover guest isolation, malformed quantities, cross-site requests, concurrent capacity, transactional email creation, receipt privacy, repeated cancellation, registration/login, admin access, session revocation, reset replay, body size, rate limits and email failure retries.
-- The new registration screen was visually inspected in the browser.
-- Created an ignored local database backup and restored it into kneaded_loaves_restore_test: two products, two orders and four migrations restored. This verifies a local restore, not hosted disaster recovery.
+## Must still be verified before live checkout
 
-## Still requires owner/provider setup
+- Preserve/import the existing database and actual local photos; prove backup restoration and encrypted-settings continuity.
+- Confirm ZIPs, fees, capacity, exact Tuesday opening and Thursday/Friday cutoff times, delivery/pickup times, ingredients/allergens and tax applicability.
+- Complete approved provider setup and test both full payment lifecycles with real sandbox credentials, then verify live-mode readiness without fake orders.
+- Verify the deployed Netlify runtime, Blobs persistence across redeploy, private guest receipts, mobile/cancel/back flows and webhook delivery.
+- Verify SMTP sender, immediate email dispatch and scheduled retry in the deployed environment.
+- Track the owner-approved exact build-only audit exception until its 2026-11-11T00:00:00Z expiry; verify free usage limits, operational monitoring and unresolved-payment procedures.
 
-1. **Stripe — deliberately deferred:** verified payment lifecycle, webhooks, failures/expiry, refunds and recovery. Production checkout remains paused.
-2. **Hosting/domain:** supply or select a host, provision production PostgreSQL, DNS/TLS, persistent uploads, the email worker, monitoring and off-host backups. Docker deployment files have not been executed here.
-3. **Email:** supply SMTP credentials and a verified sender/domain, configure provider DNS records, then test real inbox delivery and password recovery. No email was sent during tests.
-4. **Real admin and business details:** set a unique admin password and strong production secrets; review menu/photos, allergens, stock, fulfillment details and customer policies. Schedule a real order window when ready.
-5. **Automatic social posting:** still needs platform accounts, app permissions and API adapters; existing drafting/review remains usable manually. No posts were published. This is not complete merely because credentials are present.
-
-See [DEPLOYMENT.md](./DEPLOYMENT.md) for exact setup and verification steps. No public deployment, real payment or external message was performed.
+See [DEPLOYMENT.md](DEPLOYMENT.md) and [PHOTO-STORAGE.md](PHOTO-STORAGE.md). Keep CHECKOUT_ENABLED=false until every required setting and test is complete.
