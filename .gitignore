@@ -7,10 +7,10 @@ node_modules
 coverage
 dist
 *.log
-public/uploads
+/public/uploads
 .postgres-data
 tsconfig.tsbuildinfo
 .npm-cache
 .next-dev
 backups
-uploads
+/uploads

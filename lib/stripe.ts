@@ -11,5 +11,5 @@ export async function getStripe() {
   if (!testMode && key.startsWith("sk_test_")) {
     throw new Error("Stripe test key is configured while test mode is off.");
   }
-  return new Stripe(key, { apiVersion: "2024-06-20" });
+  return new Stripe(key, { apiVersion: "2024-06-20", timeout: 8000, maxNetworkRetries: 0 });
 }

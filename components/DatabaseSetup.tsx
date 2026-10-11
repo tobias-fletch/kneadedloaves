@@ -1,4 +1,5 @@
 export function DatabaseSetup({ detail }: { detail?: string }) {
+  if (process.env.NODE_ENV === "production") return <main className="section"><div className="panel max-w-3xl p-5"><span className="badge bg-jam text-white">Ordering is unavailable</span><h1 className="mt-4 text-3xl font-black">Kneaded Loaves</h1><p className="mt-3 text-sm leading-6 text-ink/75">The shop is not ready to take orders right now. Please check back soon or contact the bakery.</p></div></main>;
   return (
     <main className="section">
       <div className="panel max-w-3xl p-5">

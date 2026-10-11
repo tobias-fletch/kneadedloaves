@@ -1,4 +1,4 @@
-import { FulfillmentType } from "@prisma/client";
+import { FulfillmentType, Prisma } from "@prisma/client";
 import { getAppConfigValues } from "@/lib/app-config";
 import { formatMoney } from "@/lib/money";
 
@@ -40,13 +40,13 @@ function renderTemplate(template: string, input: OrderEmailInput) {
   return template.replace(/\{\{(\w+)\}\}/g, (_, key: string) => values[key] ?? "");
 }
 
-export async function getOrderEmailTemplates() {
+export async function getOrderEmailTemplates(db?: Prisma.TransactionClient) {
   const config = await getAppConfigValues([
     "EMAIL_PICKUP_SUBJECT",
     "EMAIL_PICKUP_BODY",
     "EMAIL_DELIVERY_SUBJECT",
     "EMAIL_DELIVERY_BODY"
-  ]);
+  ], db);
   return {
     pickupSubject: config.EMAIL_PICKUP_SUBJECT || defaultTemplates.PICKUP.subject,
     pickupBody: config.EMAIL_PICKUP_BODY || defaultTemplates.PICKUP.body,
@@ -55,8 +55,8 @@ export async function getOrderEmailTemplates() {
   };
 }
 
-export function prepareOrderEmail(input: OrderEmailInput, templates: Awaited<ReturnType<typeof getOrderEmailTemplates>>) {
+export function prepareOrderEmail(input: OrderEmailInput, templates: Awaited<ReturnType<typeof getOrderEmailTemplates>>, paid = false) {
   const subject = input.fulfillmentType === "DELIVERY" ? templates.deliverySubject : templates.pickupSubject;
   const body = input.fulfillmentType === "DELIVERY" ? templates.deliveryBody : templates.pickupBody;
-  return { to: input.to, subject: "Order received — " + renderTemplate(subject, input), body: "Payment has not been confirmed.\n\n" + renderTemplate(body, input) };
+  return { to: input.to, subject: (paid ? "" : "Order received — ") + renderTemplate(subject, input), body: (paid ? "Payment confirmed.\n\n" : "Payment has not been confirmed.\n\n") + renderTemplate(body, input) };
 }

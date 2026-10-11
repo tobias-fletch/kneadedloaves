@@ -2,6 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function middleware(request: NextRequest) {
   if (["GET", "HEAD", "OPTIONS"].includes(request.method)) return NextResponse.next();
+  if (process.env.BAKERY_DEPLOY_CONTEXT && process.env.BAKERY_DEPLOY_CONTEXT !== "production") return NextResponse.json({ error: "This deployment is read-only." }, { status: 403 });
+  const webhook = ["/api/payments/stripe/webhook", "/api/payments/paypal/webhook"].includes(request.nextUrl.pathname);
+  // Only these exact routes bypass browser CSRF checks. Each authenticates the
+  // bounded raw body with its provider's verified webhook signature.
+  if (webhook) {
+    if (request.method !== "POST") return NextResponse.json({ error: "Method not allowed." }, { status: 405 });
+    if (Number(request.headers.get("content-length") || 0) > 1024 * 1024) return NextResponse.json({ error: "Request is too large." }, { status: 413 });
+    return NextResponse.next();
+  }
   const origin = request.headers.get("origin");
   const expected = process.env.NODE_ENV === "production" ? process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin : `${request.nextUrl.protocol}//${request.headers.get("host") || request.nextUrl.host}`;
   if (request.headers.get("sec-fetch-site") === "cross-site" || (origin && origin !== new URL(expected).origin)) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { DeliveryZone, PickupLocation } from "@prisma/client";
 
 export function CheckoutForm({
@@ -17,6 +17,18 @@ export function CheckoutForm({
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const submittingRef = useRef(false);
+  const attemptRef = useRef<{ key: string; details: string } | null>(null);
+  const [options, setOptions] = useState<{ providers: string[]; windows: { id: string; label: string; cutoff: string }[] } | null>(null);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/checkout/options", { cache: "no-store" }).then(async response => {
+      if (!response.ok) throw new Error();
+      const data = await response.json();
+      if (active) setOptions(data);
+    }).catch(() => { if (active) setMessage("Checkout availability could not be loaded. Please reopen your cart."); });
+    return () => { active = false; };
+  }, []);
+  const checkoutReady = Boolean(options?.providers.length && options?.windows.length);
   const canFulfill = pickupLocations.length > 0 || deliveryZones.length > 0;
 
   async function submit(formData: FormData) {
@@ -25,6 +37,15 @@ export function CheckoutForm({
     setLoading(true);
     setMessage("");
     const payload = Object.fromEntries(formData.entries());
+    const details = JSON.stringify(payload);
+    let attempt = attemptRef.current;
+    try { attempt = JSON.parse(sessionStorage.getItem("bakery-checkout-attempt") || "null"); } catch { /* In-memory retries still work with disabled browser storage. */ }
+    if (!attempt || attempt.details !== details) {
+      attempt = { key: crypto.randomUUID(), details };
+      try { sessionStorage.setItem("bakery-checkout-attempt", JSON.stringify(attempt)); } catch { /* Storage can be disabled in private browsing. */ }
+    }
+    attemptRef.current = attempt;
+    payload.checkoutKey = attempt.key;
     try {
       const response = await fetch("/api/checkout", {
         method: "POST",
@@ -50,6 +71,13 @@ export function CheckoutForm({
   return (
     <form action={submit} className={`${framed ? "panel p-4" : "border-t border-amber-200 pt-4"} space-y-4`}>
       <h2 className="text-lg font-black">Checkout</h2>
+      {options?.windows.length ? <div>
+        <label htmlFor="order-window">Delivery or pickup date</label>
+        <select id="order-window" name="orderWindowId" required>
+          {options.windows.map(window => <option key={window.id} value={window.id}>{window.label} · Order by {window.cutoff}</option>)}
+        </select>
+        <p className="mt-1 text-xs text-ink/70">All dates and cutoffs use America/New_York time.</p>
+      </div> : null}
       <div className="grid gap-3 sm:grid-cols-2">
         <div>
           <label>Name</label>
@@ -102,7 +130,7 @@ export function CheckoutForm({
             <select name="deliveryZoneId" required>
               {deliveryZones.map((zone) => (
                 <option value={zone.id} key={zone.id}>
-                  {zone.name} ({zone.zipCodes.join(", ")})
+                  {zone.name} ({zone.zipCodes.join(", ")}) · ${(zone.feeCents / 100).toFixed(2)} delivery
                 </option>
               ))}
             </select>
@@ -115,9 +143,17 @@ export function CheckoutForm({
           </div>
         </>
       )}
+      {options?.providers.length ? <div>
+        <label htmlFor="payment-provider">Pay securely with</label>
+        <select id="payment-provider" name="paymentProvider" required>
+          {options.providers.map(provider => <option key={provider} value={provider}>{provider === "STRIPE" ? "Card (Stripe)" : "PayPal"}</option>)}
+        </select>
+        <p className="mt-1 text-xs text-ink/70">Your order is confirmed only after payment. Card details stay with the payment provider.</p>
+      </div> : null}
+      {!checkoutReady ? <p className="rounded-md bg-crumb p-3 text-sm font-semibold text-jam">{options ? "Online checkout is currently closed. Please contact the bakery." : "Checking checkout availability..."}</p> : null}
       {!canFulfill ? <p className="rounded-md bg-crumb p-3 text-sm font-semibold text-jam">Checkout is paused until pickup or delivery is configured.</p> : null}
-      <button className="btn-primary w-full" disabled={loading || !canFulfill}>
-        {loading ? "Preparing checkout..." : "Place order"}
+      <button className="btn-primary w-full" disabled={loading || !canFulfill || !checkoutReady}>
+        {loading ? "Preparing checkout..." : "Continue to secure payment"}
       </button>
       {message ? <p className="rounded-md bg-crumb p-3 text-sm font-semibold text-ink">{message}</p> : null}
     </form>

@@ -2,27 +2,31 @@ import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { createAutomatedDraft } from "@/lib/social";
+import { parseOrderWindowInput } from "@/lib/order-rules";
+import { readJson } from "@/lib/request";
 
 export async function POST(request: Request) {
   await requireAdmin();
   const contentType = request.headers.get("content-type") ?? "";
-  const body = contentType.includes("application/json")
-    ? await request.json()
-    : Object.fromEntries((await request.formData()).entries());
-  const window = await prisma.orderWindow.create({
-    data: {
-      name: String(body.name),
-      opensAt: new Date(body.opensAt),
-      closesAt: new Date(body.closesAt),
-      fulfillmentDate: new Date(body.fulfillmentDate),
-      maxOrders: body.maxOrders ? Number(body.maxOrders) : null,
-      manualOpen: Boolean(body.manualOpen),
-      manualClosed: Boolean(body.manualClosed)
-    }
-  });
-  await createAutomatedDraft({ title: window.name, trigger: "Order window opening soon", orderWindowId: window.id });
+  let data;
+  try {
+    const body = contentType.includes("application/json")
+      ? await readJson(request)
+      : Object.fromEntries((await request.formData()).entries());
+    data = parseOrderWindowInput(body);
+  } catch (error) {
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Invalid order window." }, { status: 400 });
+  }
+  const window = await prisma.orderWindow.create({ data });
+  let warning: string | undefined;
+  try {
+    await createAutomatedDraft({ title: window.name, trigger: "Order window opening soon", orderWindowId: window.id });
+  } catch {
+    // A draft failure must not disguise a successful save and invite duplicate windows.
+    warning = "Window created. Its social draft could not be created; you can make that draft separately.";
+  }
   if (!contentType.includes("application/json")) {
     return NextResponse.redirect(new URL("/admin/windows", request.url), { status: 303 });
   }
-  return NextResponse.json(window);
+  return NextResponse.json({ ...window, ...(warning ? { warning } : {}) }, { status: 201 });
 }

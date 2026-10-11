@@ -13,11 +13,13 @@ async function identity() {
   return { sessionId, userId: session?.sub };
 }
 export async function GET() {
+  if (!process.env.DATABASE_URL?.trim()) return NextResponse.json({ items: [], available: false }, { headers: { "Cache-Control": "no-store" } });
   const { sessionId, userId } = await identity();
   const cart = await prisma.cart.findUnique({ where: userId ? { userId } : { sessionId }, include: { items: { include: { product: { include: { images: true } } }, orderBy: { createdAt: "asc" } } } });
   return NextResponse.json(cart || { items: [] });
 }
 async function mutate(request: Request) {
+  if (!process.env.DATABASE_URL?.trim()) return NextResponse.json({ error: "Online ordering is not available yet. Please check back soon." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   if (!await rateLimit(request, "cart", 120)) return NextResponse.json({ error: "Please wait before changing your cart again." }, { status: 429 });
   const body = await readJson(request);
   const parsed = cartMutationSchema.safeParse({ ...body, quantity: request.method === "DELETE" ? 0 : body.quantity ?? 1 });

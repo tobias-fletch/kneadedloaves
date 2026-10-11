@@ -38,6 +38,7 @@ export function ProductManager({
   const [message, setMessage] = useState("");
 
   async function uploadImage(file: File) {
+    if (file.size > 3 * 1024 * 1024) throw new Error("Choose a photo smaller than 3 MB.");
     if (!file.size) return "";
     const imageData = new FormData();
     imageData.append("file", file);
@@ -129,8 +130,9 @@ export function ProductManager({
               <input name="ingredients" defaultValue={product.ingredients.join(", ")} />
               <input name="allergens" defaultValue={product.allergens.join(", ")} />
               <input name="imageId" type="hidden" defaultValue={product.imageId ?? ""} />
-              <input name="imageUrl" defaultValue={product.imageUrl ?? ""} placeholder="Image URL" type="url" />
+              <input name="imageUrl" defaultValue={product.imageUrl ?? ""} placeholder="Image URL or uploaded path" type="text" />
               <input name="imageFile" accept="image/jpeg,image/png,image/webp,image/gif" type="file" />
+              <p className="text-xs text-ink/60">JPG, PNG, WebP or GIF, up to 3 MB.</p>
               <div className="flex flex-wrap gap-3 text-sm font-semibold">
                 <label className="flex items-center gap-2">
                   <input className="h-4 w-4" name="active" type="checkbox" defaultChecked={product.active} />

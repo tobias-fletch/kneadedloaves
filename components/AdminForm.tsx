@@ -8,6 +8,7 @@ export function ProductForm({ categories }: { categories: { id: string; name: st
   const [message, setMessage] = useState("");
 
   async function uploadImage(file: File) {
+    if (file.size > 3 * 1024 * 1024) throw new Error("Choose a photo smaller than 3 MB.");
     if (!file.size) return "";
     const imageData = new FormData();
     imageData.append("file", file);
@@ -75,8 +76,9 @@ export function ProductForm({ categories }: { categories: { id: string; name: st
       </select>
       <input name="ingredients" placeholder="Ingredients, comma-separated" />
       <input name="allergens" placeholder="Allergens, comma-separated" />
-      <input name="imageUrl" placeholder="Image URL" type="url" />
+      <input name="imageUrl" placeholder="Image URL or uploaded path" type="text" />
       <input name="imageFile" accept="image/jpeg,image/png,image/webp,image/gif" type="file" />
+              <p className="text-xs text-ink/60">JPG, PNG, WebP or GIF, up to 3 MB.</p>
       <label className="flex items-center gap-2">
         <input className="h-4 w-4" name="soldOut" type="checkbox" />
         Mark sold out

@@ -18,15 +18,16 @@ test("cart quantities reject fractions, strings, negative values and non-finite 
   assert.equal(cartMutationSchema.safeParse({ productId: "product", quantity: 2 }).success, true);
 });
 test("delivery requires address and ZIP while pickup does not", () => {
-  const input = { customerName: "Test Customer", customerEmail: "test@example.com" };
+  const input = { customerName: "Test Customer", customerEmail: "test@example.com", orderWindowId: "window", checkoutKey: "12345678-1234-4234-8234-123456789abc", paymentProvider: "STRIPE" };
   assert.equal(orderSchema.safeParse({ ...input, fulfillmentType: "DELIVERY" }).success, false);
   assert.equal(orderSchema.safeParse({ ...input, fulfillmentType: "PICKUP" }).success, true);
 });
 test("manual opening cannot bypass closure or capacity", () => {
-  const window = { manualClosed: false, manualOpen: true, opensAt: new Date(0), closesAt: new Date(0), maxOrders: 1 };
-  assert.equal(acceptsOrders(window, 0), true);
-  assert.equal(acceptsOrders(window, 1), false);
-  assert.equal(acceptsOrders({ ...window, manualClosed: true }, 0), false);
+  const window = { manualClosed: false, manualOpen: true, opensAt: new Date("2026-10-13T14:00:00Z"), closesAt: new Date("2026-10-15T22:00:00Z"), fulfillmentDate: new Date("2026-10-17T14:00:00Z"), maxOrders: 1 };
+  const now = new Date("2026-10-14T14:00:00Z");
+  assert.equal(acceptsOrders(window, 0, now), true);
+  assert.equal(acceptsOrders(window, 1, now), false);
+  assert.equal(acceptsOrders({ ...window, manualClosed: true }, 0, now), false);
 });
 test("secret encryption authenticates ciphertext and uses a unique nonce", () => {
   process.env.CONFIG_ENCRYPTION_KEY = randomBytes(32).toString("hex");

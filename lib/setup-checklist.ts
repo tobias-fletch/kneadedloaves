@@ -1,3 +1,4 @@
+import { getCheckoutReadiness } from "@/lib/checkout-readiness";
 import { getAppConfigValue, getAppConfigValues } from "@/lib/app-config";
 import { prisma } from "@/lib/prisma";
 
@@ -75,6 +76,7 @@ export async function getSetupChecklist() {
     "YOUTUBE_CLIENT_ID",
     "YOUTUBE_CLIENT_SECRET"
   ]);
+  const paymentReady = await getCheckoutReadiness();
   const stripeReady = Boolean(config.STRIPE_SECRET_KEY);
   
   const emailReady = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM"].every((key) => Boolean(config[key as keyof typeof config]));
@@ -92,6 +94,8 @@ export async function getSetupChecklist() {
   const jwtSecret = await getAppConfigValue("JWT_SECRET");
 
   const items: SetupItem[] = [
+    { id: "live-checkout", group: "Payments", title: "Verify and enable live checkout", detail: "Confirm menu, allergens, service ZIPs, fees, capacity, cutoff times and applicable tax handling. Verify a live-ready provider and its webhooks before enabling checkout.", href: "/admin/setup", complete: paymentReady.providers.length > 0 },
+    { id: "paypal", group: "Payments", title: "Connect PayPal when required", detail: "Set the server-side client credentials and webhook ID, verify sandbox and live events, then enable PayPal.", href: "/admin/setup", complete: paymentReady.providers.includes("PAYPAL") },
     {
       id: "real-products",
       group: "Storefront",
@@ -128,9 +132,9 @@ export async function getSetupChecklist() {
       id: "stripe-webhook",
       group: "Payments",
       title: "Add Stripe webhook secret",
-      detail: "Add STRIPE_WEBHOOK_SECRET in the Setup tab and add the checkout-completed webhook before accepting live payments.",
+      detail: "Configure and verify Stripe completion, expiry, refund and dispute webhooks. Checkout also requires launch, tax and smoke-test settings.",
       href: "/admin/setup",
-      complete: false // Stripe integration is explicitly deferred; credentials alone are not readiness.
+      complete: paymentReady.providers.includes("STRIPE")
     },
     {
       id: "public-url",

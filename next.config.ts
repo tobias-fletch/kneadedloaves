@@ -3,6 +3,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   distDir: process.env.NODE_ENV === "development" ? ".next-dev" : ".next",
   poweredByHeader: false,
+  env: { BAKERY_DEPLOY_CONTEXT: process.env.CONTEXT || "production" },
+  async rewrites() {
+    return { beforeFiles: [], afterFiles: [], fallback: [{ source: "/uploads/:name", destination: "/api/media/:name" }] };
+  },
   async headers() {
     return [{ source: "/:path*", headers: [
       { key: "X-Content-Type-Options", value: "nosniff" },
