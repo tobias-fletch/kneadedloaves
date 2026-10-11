@@ -1,0 +1,346 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  CUSTOMER
+}
+
+enum FulfillmentType {
+  DELIVERY
+  PICKUP
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  PREPARING
+  READY
+  OUT_FOR_DELIVERY
+  COMPLETED
+  CANCELLED
+}
+
+enum SocialPlatform {
+  INSTAGRAM
+  TIKTOK
+  FACEBOOK
+  YOUTUBE_SHORTS
+}
+
+enum SocialPostStatus {
+  DRAFT
+  NEEDS_REVIEW
+  APPROVED
+  SCHEDULED
+  POSTED
+  FAILED
+  REJECTED
+}
+
+model User {
+  id              String           @id @default(cuid())
+  email           String           @unique
+  name            String?
+  passwordHash    String
+  sessionVersion  Int              @default(0)
+  role            Role             @default(CUSTOMER)
+  customerProfile CustomerProfile?
+  carts           Cart[]
+  orders          Order[]
+  socialPosts     SocialPost[]     @relation("AuthorPosts")
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model CustomerProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  phone     String?
+  notes     String?
+  address1  String?
+  address2  String?
+  city      String?
+  state     String?
+  zip       String?
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Category {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  slug      String    @unique
+  products  Product[]
+  createdAt DateTime  @default(now())
+}
+
+model Product {
+  id             String         @id @default(cuid())
+  name           String
+  slug           String         @unique
+  description    String
+  priceCents     Int
+  allergens      String[]
+  ingredients    String[]
+  inventoryLimit Int            @default(0)
+  soldOut        Boolean        @default(false)
+  active         Boolean        @default(true)
+  availableFrom  DateTime?
+  availableTo    DateTime?
+  categoryId     String?
+  category       Category?      @relation(fields: [categoryId], references: [id])
+  images         ProductImage[]
+  cartItems      CartItem[]
+  orderItems     OrderItem[]
+  popupEvents    PopupEvent[]   @relation("EventProducts")
+  socialPosts    SocialPost[]
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+}
+
+model ProductImage {
+  id        String   @id @default(cuid())
+  productId String
+  url       String
+  alt       String?
+  sortOrder Int      @default(0)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model Cart {
+  id        String     @id @default(cuid())
+  userId    String?    @unique
+  sessionId String?    @unique
+  user      User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items     CartItem[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model CartItem {
+  id        String   @id @default(cuid())
+  cartId    String
+  productId String
+  quantity  Int      @default(1)
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id])
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cartId, productId])
+}
+
+model Order {
+  id                    String          @id @default(cuid())
+  userId                String?
+  customerEmail         String
+  customerName          String
+  customerPhone         String?
+  status                OrderStatus     @default(PENDING)
+  totalCents            Int
+  fulfillmentType       FulfillmentType
+  deliveryZoneId        String?
+  pickupLocationId      String?
+  orderWindowId         String?
+  deliveryAddress       String?
+  fulfillmentInstructions String?
+  stripeCheckoutSessionId String?
+  receiptTokenHash       String?         @unique
+  inventoryRestored      Boolean         @default(false)
+  user                  User?           @relation(fields: [userId], references: [id])
+  deliveryZone          DeliveryZone?   @relation(fields: [deliveryZoneId], references: [id])
+  pickupLocation        PickupLocation? @relation(fields: [pickupLocationId], references: [id])
+  orderWindow           OrderWindow?    @relation(fields: [orderWindowId], references: [id])
+  items                 OrderItem[]
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+}
+
+model OrderItem {
+  id             String  @id @default(cuid())
+  orderId        String
+  productId      String?
+  quantity       Int
+  unitPriceCents Int
+  productName    String
+  order          Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product        Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+}
+
+model OrderWindow {
+  id             String   @id @default(cuid())
+  name           String
+  opensAt        DateTime
+  closesAt       DateTime
+  fulfillmentDate DateTime
+  maxOrders      Int?
+  manualOpen     Boolean  @default(false)
+  manualClosed   Boolean  @default(false)
+  orders         Order[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model DeliveryZone {
+  id          String   @id @default(cuid())
+  name        String
+  zipCodes    String[]
+  feeCents    Int      @default(0)
+  instructions String?
+  active      Boolean  @default(true)
+  orders      Order[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PickupLocation {
+  id           String   @id @default(cuid())
+  name         String
+  address      String
+  instructions String?
+  active       Boolean  @default(true)
+  orders       Order[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model PopupEvent {
+  id          String     @id @default(cuid())
+  title       String
+  startsAt    DateTime
+  endsAt      DateTime?
+  location    String
+  description String
+  rsvpUrl     String?
+  products    Product[]  @relation("EventProducts")
+  socialPosts SocialPost[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model SocialPost {
+  id             String             @id @default(cuid())
+  title          String
+  caption        String
+  hashtags       String[]
+  platforms      SocialPlatform[]
+  status         SocialPostStatus   @default(DRAFT)
+  scheduledAt    DateTime?
+  postedAt       DateTime?
+  failureReason  String?
+  productId      String?
+  popupEventId   String?
+  orderWindowId  String?
+  authorId       String?
+  product        Product?           @relation(fields: [productId], references: [id])
+  popupEvent      PopupEvent?        @relation(fields: [popupEventId], references: [id])
+  author          User?              @relation("AuthorPosts", fields: [authorId], references: [id])
+  assets          SocialPostAsset[]
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+}
+
+model SocialPlatformAccount {
+  id            String         @id @default(cuid())
+  platform      SocialPlatform
+  handle        String
+  externalId    String?
+  connected     Boolean        @default(false)
+  credentialRef String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model SocialPostAsset {
+  id           String     @id @default(cuid())
+  socialPostId String
+  url          String
+  type         String
+  alt          String?
+  socialPost   SocialPost @relation(fields: [socialPostId], references: [id], onDelete: Cascade)
+}
+
+model ContentTemplate {
+  id        String           @id @default(cuid())
+  name      String
+  type      String
+  prompt    String
+  platforms SocialPlatform[]
+  active    Boolean          @default(true)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+model EmailSubscriber {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  firstName String?
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
+
+model AdminSettings {
+  id                         String   @id @default(cuid())
+  bakeryName                 String
+  logoUrl                    String?
+  businessDescription        String
+  deliveryRules              String
+  pickupRules                String
+  instagramHandle            String?
+  tiktokHandle               String?
+  facebookHandle             String?
+  youtubeHandle              String?
+  defaultHashtags            String[]
+  orderingOpenMessage        String
+  orderingClosedMessage      String
+  emailNotificationsEnabled  Boolean  @default(false)
+  notificationEmail          String?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+}
+
+model AppConfig {
+  key       String   @id
+  value     String
+  secret    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model RateLimit {
+  key       String   @id
+  count     Int      @default(1)
+  expiresAt DateTime
+  @@index([expiresAt])
+}
+
+model PasswordReset {
+  tokenHash String @id
+  userId String
+  expiresAt DateTime
+  @@index([expiresAt])
+}
+
+model EmailJob {
+  id String @id @default(cuid())
+  dedupeKey String @unique
+  to String
+  subject String
+  body String
+  attempts Int @default(0)
+  status String @default("PENDING")
+  lastError String?
+  availableAt DateTime @default(now())
+  lockedUntil DateTime?
+  createdAt DateTime @default(now())
+  sentAt DateTime?
+  @@index([status, availableAt])
+}

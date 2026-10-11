@@ -1,0 +1,32 @@
+import { createHash } from "crypto";
+import { prisma } from "@/lib/prisma";
+
+export async function readJson(request: Request): Promise<Record<string, unknown>> {
+  const reader = request.body?.getReader();
+  if (!reader) return {};
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > 65536) { await reader.cancel(); return {}; }
+    chunks.push(value);
+  }
+  try {
+    const result = JSON.parse(Buffer.concat(chunks).toString("utf8"));
+    return result && typeof result === "object" && !Array.isArray(result) ? result : {};
+  } catch { return {}; }
+}
+
+// Only enable forwarded IPs behind a proxy that replaces the client-supplied header.
+export async function rateLimit(request: Request, scope: string, limit = 30, identifier?: string) {
+  const ip = process.env.TRUST_PROXY === "true" ? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() : "shared";
+  const bucket = Math.floor(Date.now() / 600000);
+  const key = createHash("sha256").update(`${scope}:${identifier || ip || "shared"}:${bucket}`).digest("hex");
+  const result = await prisma.rateLimit.upsert({
+    where: { key }, update: { count: { increment: 1 } },
+    create: { key, count: 1, expiresAt: new Date((bucket + 1) * 600000) }
+  });
+  return result.count <= limit;
+}

@@ -1,0 +1,75 @@
+import assert from "node:assert/strict";
+import { randomUUID, randomBytes, createHash } from "crypto";
+import { PrismaClient } from "@prisma/client";
+import { changeOrderStatus } from "../lib/order-status";
+import { processEmailQueue } from "../lib/email-queue";
+const databaseUrl = process.env.DATABASE_URL || "";
+if (!new URL(databaseUrl).pathname.endsWith("/kneaded_loaves_test")) throw new Error("Integration tests require the dedicated kneaded_loaves_test database.");
+const prisma = new PrismaClient();
+const base = process.env.TEST_APP_URL || "http://127.0.0.1:3001";
+async function request(path: string, body?: unknown, cookie?: string, method = "POST") {
+  return fetch(base + path, { method, redirect: "manual", headers: { "Content-Type": "application/json", Origin: base, ...(cookie ? { Cookie: cookie } : {}) }, ...(body !== undefined ? { body: JSON.stringify(body) } : {}) });
+}
+async function main() {
+  // Only this dedicated test database is reset. Never point these tests at shop data.
+  await prisma.orderItem.deleteMany(); await prisma.order.deleteMany(); await prisma.cartItem.deleteMany(); await prisma.cart.deleteMany();
+  await prisma.product.deleteMany(); await prisma.orderWindow.deleteMany(); await prisma.emailJob.deleteMany(); await prisma.rateLimit.deleteMany();
+  const suffix = randomUUID();
+  const product = await prisma.product.create({ data: { name: "Test loaf", slug: suffix, description: "Integration test loaf", priceCents: 1000, inventoryLimit: 10, allergens: [], ingredients: [] } });
+  const pickup = await prisma.pickupLocation.create({ data: { name: "Test pickup", address: "Test address" } });
+  await prisma.orderWindow.create({ data: { name: "Test window", opensAt: new Date(Date.now() - 60000), closesAt: new Date(Date.now() + 3600000), fulfillmentDate: new Date(Date.now() + 86400000), maxOrders: 1 } });
+  const payload = { customerName: "Test Customer", customerEmail: "test@example.invalid", fulfillmentType: "PICKUP", pickupLocationId: pickup.id };
+  const carts = await Promise.all([0, 1].map(async () => {
+    const result = await request("/api/cart", { productId: product.id, quantity: 1 });
+    assert.equal(result.status, 200, await result.text());
+    return result.headers.get("set-cookie")!.split(";")[0];
+  }));
+  assert.notEqual(carts[0], carts[1]);
+  const missing = await request("/api/checkout", payload);
+  assert.equal(missing.status, 400);
+  assert.equal(await prisma.order.count(), 0);
+  assert.equal(await prisma.cartItem.count(), 2);
+  console.log("PASS: missing guest cookie cannot consume another cart");
+  for (const quantity of [-1, 0.5, "2", 1001]) assert.equal((await request("/api/cart", { productId: product.id, quantity }, carts[0])).status, 400);
+  const crossSite = await fetch(base + "/api/cart", { method: "POST", headers: { Origin: "https://untrusted.example", "Content-Type": "application/json" }, body: JSON.stringify({ productId: product.id, quantity: 1 }) });
+  assert.equal(crossSite.status, 403);
+  console.log("PASS: invalid quantities and cross-origin mutations rejected");
+  const checkout = await Promise.all(carts.map(cookie => request("/api/checkout", payload, cookie)));
+  assert.deepEqual(checkout.map(r => r.status).sort(), [200, 400]);
+  assert.equal(await prisma.order.count(), 1);
+  assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).inventoryLimit, 9);
+  assert.equal(await prisma.emailJob.count(), 1);
+  console.log("PASS: concurrent checkout respects capacity and atomically queues email");
+  const receipt = await checkout.find(r => r.status === 200)!.json();
+  assert.equal((await fetch(base + `/orders/${receipt.orderId}`, { redirect: "manual" })).status, 404);
+  assert.equal((await fetch(base + receipt.url)).status, 200);
+  await Promise.all([0, 1].map(() => prisma.$transaction(tx => changeOrderStatus(tx, receipt.orderId, "CANCELLED"))));
+  assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).inventoryLimit, 10);
+  console.log("PASS: receipt privacy and exactly-once stock restoration");
+  const email = `customer-${suffix}@example.invalid`, password = "Local-test-password-2026";
+  assert.equal((await request("/api/auth/register", { name: "Test Customer", email, password })).status, 200);
+  const login = await fetch(base + "/api/auth/login", { method: "POST", redirect: "manual", headers: { Origin: base }, body: new URLSearchParams({ email, password }) });
+  assert.equal(login.status, 303); assert.equal(new URL(login.headers.get("location")!).pathname, "/account");
+  const cookie = login.headers.get("set-cookie")!.split(";")[0];
+  assert.equal((await request("/api/admin/setup", { values: [] }, cookie)).status, 307);
+  assert.equal((await request("/api/auth/change-password", { currentPassword: password, password: "Another-test-password-2026" }, cookie)).status, 200);
+  assert.equal((await request("/api/auth/change-password", { currentPassword: "Another-test-password-2026", password }, cookie)).status, 401);
+  console.log("PASS: registration, login, admin authorization and session revocation");
+  const user = await prisma.user.findUniqueOrThrow({ where: { email } });
+  const resetToken = randomBytes(32).toString("hex");
+  await prisma.passwordReset.create({ data: { tokenHash: createHash("sha256").update(resetToken).digest("hex"), userId: user.id, expiresAt: new Date(Date.now() + 60000) } });
+  assert.equal((await request("/api/auth/reset-password", { token: resetToken, password })).status, 200);
+  assert.equal((await request("/api/auth/reset-password", { token: resetToken, password })).status, 400);
+  assert.equal((await request("/api/cart", { padding: "x".repeat(70000) }, carts[0])).status, 413);
+  for (let i = 0; i < 10; i++) await request("/api/auth/register", {});
+  assert.equal((await request("/api/auth/register", {})).status, 429);
+  console.log("PASS: one-use password reset, request size limit and rate limiting");
+  await processEmailQueue();
+  const job = await prisma.emailJob.findFirstOrThrow();
+  assert.equal(job.status, "PENDING"); assert.equal(job.attempts, 1);
+  await prisma.emailJob.update({ where: { id: job.id }, data: { attempts: 4, availableAt: new Date(0) } });
+  await processEmailQueue();
+  assert.equal((await prisma.emailJob.findUniqueOrThrow({ where: { id: job.id } })).status, "FAILED");
+  console.log("PASS: missing SMTP retries and eventually exposes a failed delivery");
+}
+main().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => prisma.$disconnect());

@@ -1,0 +1,22 @@
+services:
+  web:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_APP_URL: https://kneadedloaves.com
+    image: kneaded-loaves:${RELEASE_TAG:-local}
+    env_file: .env.production
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - uploads:/app/uploads
+  worker:
+    image: kneaded-loaves:${RELEASE_TAG:-local}
+    env_file: .env.production
+    command: ["npm", "run", "email:worker"]
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+volumes:
+  uploads:
