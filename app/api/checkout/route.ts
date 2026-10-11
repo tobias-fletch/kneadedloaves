@@ -12,6 +12,7 @@ import { expireAbandonedPayPalOrders } from "@/lib/payment-reconciliation";
 
 export const runtime = "nodejs";
 export async function POST(request: Request) {
+  if (!process.env.DATABASE_URL?.trim()) return NextResponse.json({ error: "Online checkout is not available yet. Please contact the bakery." }, { status: 503, headers: { "Cache-Control": "no-store" } });
   if (!await rateLimit(request, "checkout", 20)) return NextResponse.json({ error: "Please wait before trying checkout again." }, { status: 429 });
   const parsed = orderSchema.safeParse(await readJson(request));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid order." }, { status: 400 });

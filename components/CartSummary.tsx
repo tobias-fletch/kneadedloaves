@@ -15,6 +15,7 @@ type CartItem = {
 
 type Cart = {
   items: CartItem[];
+  available?: boolean;
 };
 
 export function CartSummary({ framed = true, onItemCountChange }: { framed?: boolean; onItemCountChange?: (count: number) => void }) {
@@ -122,7 +123,7 @@ export function CartSummary({ framed = true, onItemCountChange }: { framed?: boo
           </div>
         </div>
       ) : (
-        <p className="mt-3 text-sm text-ink/70">Your cart is empty. Add a bake to begin checkout.</p>
+        <p className="mt-3 text-sm text-ink/70">{cart?.available === false ? "Ordering is unavailable while the shop is being prepared." : "Your cart is empty. Add a bake to begin checkout."}</p>
       )}
       {message ? <p className="mt-3 rounded-md bg-crumb p-3 text-sm font-semibold text-jam">{message}</p> : null}
     </>
