@@ -11,7 +11,7 @@ export default async function AdminOrdersPage({ searchParams }: { searchParams: 
     },
     include: { items: true, orderWindow: true, deliveryZone: true, pickupLocation: true },
     orderBy: { createdAt: "desc" }
-  });
+  }).catch(() => []);
 
   return (
     <div className="space-y-4">
