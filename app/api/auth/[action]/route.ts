@@ -24,17 +24,25 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
   if (action === "forgot-password") {
     const parsed = emailSchema.safeParse(body.email);
     if (!parsed.success) return NextResponse.json({ error: "Enter a valid email." }, { status: 400 });
-    try { await smtpTransport(); } catch { return NextResponse.json({ error: "Password recovery email is unavailable. Please contact the bakery." }, { status: 503 }); }
+    let emailAvailable = true;
+    try { await smtpTransport(); } catch { emailAvailable = false; }
     const user = await prisma.user.findUnique({ where: { email: parsed.data } });
     if (user) {
       const token = randomBytes(32).toString("hex");
       const tokenHash = createHash("sha256").update(token).digest("hex");
       const base = process.env.APP_URL || process.env.NEXT_PUBLIC_APP_URL || "http://127.0.0.1:3000";
+      const resetUrl = `${base}/reset-password?token=${token}`;
       await prisma.$transaction(async tx => {
         await tx.passwordReset.deleteMany({ where: { userId: user.id } });
         await tx.passwordReset.create({ data: { tokenHash, userId: user.id, expiresAt: new Date(Date.now() + 3600000) } });
-        await queueEmail({ dedupeKey: `reset:${tokenHash}`, to: user.email, subject: "Reset your Kneaded Loaves password", body: `Use this private link within one hour to reset your password:\n${base}/reset-password?token=${token}\n\nIf you did not request this, ignore this email.` }, tx);
+        if (emailAvailable) {
+          await queueEmail({ dedupeKey: `reset:${tokenHash}`, to: user.email, subject: "Reset your Kneaded Loaves password", body: `Use this private link within one hour to reset your password:\n${resetUrl}\n\nIf you did not request this, ignore this email.` }, tx);
+        }
       });
+      if (!emailAvailable) {
+        // Email not configured — return the reset link directly
+        return NextResponse.json({ message: "Email is not configured. Use this private link within one hour to reset your password:", resetUrl });
+      }
     }
     return NextResponse.json({ message: "If that address has an account, a password reset email will be sent." });
   }
