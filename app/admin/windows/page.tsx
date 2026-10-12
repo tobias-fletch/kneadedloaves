@@ -3,7 +3,7 @@ import { DeleteWindowButton } from "@/components/DeleteWindowButton";
 import { prisma } from "@/lib/prisma";
 
 export default async function AdminWindowsPage() {
-  const windows = await prisma.orderWindow.findMany({ include: { orders: true }, orderBy: { opensAt: "desc" } });
+  const windows = await prisma.orderWindow.findMany({ include: { orders: true }, orderBy: { opensAt: "desc" } }).catch(() => []);
   return (
     <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
       <form className="panel space-y-3 p-4" action="/api/admin/windows" method="post">
