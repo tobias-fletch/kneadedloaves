@@ -160,7 +160,7 @@ export function ProductManager({
                   <span className={`badge ${product.active ? "bg-sage text-white" : "bg-crumb text-ink"}`}>
                     {product.active ? "Active" : "Inactive"}
                   </span>
-                  <span className={`badge ${product.soldOut ? "bg-jam text-white" : "bg-crumb text-ink"}`}>
+                  <span className={`badge ${product.soldOut ? "bg-jam text-ink" : "bg-crumb text-ink"}`}>
                     {product.soldOut ? "Sold out" : "Available"}
                   </span>
                 </div>
