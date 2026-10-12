@@ -7,7 +7,7 @@ export default async function AdminSocialPage() {
   const posts = await prisma.socialPost.findMany({
     include: { product: true, popupEvent: true, assets: true },
     orderBy: [{ scheduledAt: "asc" }, { createdAt: "desc" }]
-  });
+  }).catch(() => []);
   const missing = Array.from(new Set((await Promise.all(posts.map((post) => missingSocialCredentials(post.platforms)))).flat()));
 
   return (
