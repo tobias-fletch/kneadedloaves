@@ -24,9 +24,14 @@ export async function rateLimit(request: Request, scope: string, limit = 30, ide
   const ip = process.env.TRUST_PROXY === "true" ? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() : "shared";
   const bucket = Math.floor(Date.now() / 600000);
   const key = createHash("sha256").update(`${scope}:${identifier || ip || "shared"}:${bucket}`).digest("hex");
-  const result = await prisma.rateLimit.upsert({
-    where: { key }, update: { count: { increment: 1 } },
-    create: { key, count: 1, expiresAt: new Date((bucket + 1) * 600000) }
-  });
-  return result.count <= limit;
+  try {
+    const result = await prisma.rateLimit.upsert({
+      where: { key }, update: { count: { increment: 1 } },
+      create: { key, count: 1, expiresAt: new Date((bucket + 1) * 600000) }
+    });
+    return result.count <= limit;
+  } catch {
+    // If rate-limit table is unavailable, fail open rather than 500
+    return true;
+  }
 }
