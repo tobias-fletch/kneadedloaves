@@ -14,7 +14,9 @@ const config: Config = {
         page: "rgb(var(--color-page-rgb) / <alpha-value>)"
       },
       boxShadow: {
-        soft: "0 18px 60px rgba(45, 33, 27, 0.12)"
+        soft: "0 18px 60px rgba(45, 33, 27, 0.12)",
+        hard: "6px 6px 0 rgb(var(--color-ink-rgb))",
+        "hard-sm": "3px 3px 0 rgb(var(--color-ink-rgb))"
       }
     }
   },

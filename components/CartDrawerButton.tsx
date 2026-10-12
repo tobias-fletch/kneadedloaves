@@ -46,14 +46,14 @@ export function CartDrawerButton({
       <button className="btn-secondary px-3" type="button" onClick={() => setOpen(true)} aria-label="Open cart">
         <ShoppingCart size={18} />
         Cart
-        <span className="badge bg-crumb text-ink">{itemCount}</span>
+        <span className="badge bg-jam text-ink">{itemCount}</span>
       </button>
       {open ? (
-        <div className="fixed inset-0 z-50 bg-ink/35 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="Cart">
+        <div className="fixed inset-0 z-50 bg-ink/55 p-4" role="dialog" aria-modal="true" aria-label="Cart">
           <button className="absolute inset-0 h-full w-full cursor-default" type="button" aria-label="Close cart" onClick={() => setOpen(false)} />
-          <div className="relative ml-auto flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-y-auto rounded-lg bg-white shadow-soft">
-            <div className="flex items-center justify-between border-b border-amber-200 p-4">
-              <h2 className="text-lg font-black">Your cart</h2>
+          <div className="relative ml-auto flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-y-auto border-4 border-ink bg-page shadow-hard">
+            <div className="flex items-center justify-between border-b-2 border-ink bg-crumb p-4">
+              <h2 className="font-display text-2xl uppercase tracking-wide">Your cart</h2>
               <button className="btn-secondary px-3" type="button" onClick={() => setOpen(false)} aria-label="Close cart">
                 <X size={18} />
               </button>

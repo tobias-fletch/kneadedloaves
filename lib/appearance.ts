@@ -28,15 +28,15 @@ export type SiteAppearance = {
 };
 
 export const defaultAppearance: SiteAppearance = {
-  colorCrust: "#8B4A2B",
-  colorCrumb: "#F8E7D2",
-  colorButter: "#F6C85F",
-  colorJam: "#9F2B45",
-  colorSage: "#63755B",
-  colorInk: "#2D211B",
-  colorPage: "#FFFAF3",
-  fontBody: "system-ui, sans-serif",
-  fontHeading: "system-ui, sans-serif"
+  colorCrust: "#A85A2A",
+  colorCrumb: "#D8CDAE",
+  colorButter: "#E88B4A",
+  colorJam: "#D9703B",
+  colorSage: "#55663A",
+  colorInk: "#3B4527",
+  colorPage: "#E9E4D3",
+  fontBody: "Inter, system-ui, sans-serif",
+  fontHeading: "Oswald, system-ui, sans-serif"
 };
 
 const fieldByKey: Record<AppearanceKey, keyof SiteAppearance> = {

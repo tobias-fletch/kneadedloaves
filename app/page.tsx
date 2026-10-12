@@ -23,25 +23,26 @@ export default async function HomePage() {
 
   return (
     <main>
-      <section className="bg-crumb">
+      <section className="border-b-4 border-ink">
         <div className="section py-10">
-          <div className="space-y-5">
-            <span className={`badge ${openWindow ? "bg-sage text-white" : "bg-jam text-white"}`}>
-              {openWindow ? "Orders Open" : "Orders Closed"}
-            </span>
-            <div>
-              <h1 className="text-4xl font-black tracking-normal text-ink sm:text-5xl">
-                {settings?.bakeryName ?? "Kneaded Loaves"}
-              </h1>
-              <p className="mt-3 max-w-xl text-base leading-7 text-ink/75">
-                {settings?.businessDescription ?? "Small-batch breads and pastries baked for limited weekly order windows."}
-              </p>
+          <div className="border-4 border-ink bg-crumb p-6 shadow-hard sm:p-10">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className={`badge ${openWindow ? "bg-sage text-white" : "bg-jam text-ink"}`}>
+                {openWindow ? "Orders Open" : "Orders Closed"}
+              </span>
+              <span className="h-1.5 flex-1 bg-jam" aria-hidden="true" />
             </div>
-            <div className="rounded-lg bg-white p-4 shadow-soft">
-              <p className="text-sm font-semibold text-ink/70">
+            <h1 className="font-display mt-6 text-6xl uppercase leading-[0.95] text-ink sm:text-8xl">
+              {settings?.bakeryName ?? "Kneaded Loaves"}
+            </h1>
+            <p className="mt-4 max-w-xl text-base font-medium leading-7 text-ink/80">
+              {settings?.businessDescription ?? "Small-batch breads and pastries baked for limited weekly order windows."}
+            </p>
+            <div className="mt-6 border-2 border-ink bg-page p-4">
+              <p className="text-sm font-bold uppercase tracking-widest text-ink/70">
                 {openWindow ? settings?.orderingOpenMessage : settings?.orderingClosedMessage}
               </p>
-              <p className="mt-1 text-lg font-black">
+              <p className="font-display mt-1 text-2xl uppercase tracking-wide">
                 {openWindow
                   ? `Fulfillment: ${format(openWindow.fulfillmentDate, "EEEE, MMM d")}`
                   : nextWindow
@@ -53,39 +54,50 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section className="section space-y-5" id="shop">
-        <div className="panel p-4">
-          <span className={`badge ${orderingOpen ? "bg-sage text-white" : "bg-jam text-white"}`}>
-            {orderingOpen ? "Orders Open" : "Orders Closed"}
-          </span>
-          <h2 className="mt-3 text-3xl font-black">Weekly menu</h2>
-          <p className="mt-2 text-sm text-ink/70">
-            {orderingOpen
-              ? `Checkout is open until ${format(openWindow!.closesAt, "MMM d, h:mm a")}. Fulfillment is ${format(openWindow!.fulfillmentDate, "EEEE, MMM d")}.`
-              : nextWindow
-                ? `Browse now. Checkout opens ${format(nextWindow.opensAt, "MMM d, h:mm a")}.`
-                : "Browse now. The next ordering window will be announced soon."}
-          </p>
+      <section className="section space-y-6" id="shop">
+        <div className="border-4 border-ink bg-page p-5 shadow-hard">
+          <div className="flex items-stretch gap-4">
+            <span className="w-3 shrink-0 bg-jam" aria-hidden="true" />
+            <div className="flex-1">
+              <span className={`badge ${orderingOpen ? "bg-sage text-white" : "bg-jam text-ink"}`}>
+                {orderingOpen ? "Orders Open" : "Orders Closed"}
+              </span>
+              <h2 className="font-display mt-3 text-4xl uppercase tracking-wide text-ink sm:text-5xl">Weekly menu</h2>
+              <p className="mt-2 text-sm font-medium text-ink/70">
+                {orderingOpen
+                  ? `Checkout is open until ${format(openWindow!.closesAt, "MMM d, h:mm a")}. Fulfillment is ${format(openWindow!.fulfillmentDate, "EEEE, MMM d")}.`
+                  : nextWindow
+                    ? `Browse now. Checkout opens ${format(nextWindow.opensAt, "MMM d, h:mm a")}.`
+                    : "Browse now. The next ordering window will be announced soon."}
+              </p>
+            </div>
+          </div>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
           {products.map((product) => {
             const soldOut = product.soldOut || product.inventoryLimit <= 0;
             return (
-              <article className="panel overflow-hidden" key={product.id}>
+              <article className="flex flex-col border-2 border-ink bg-page shadow-hard" key={product.id}>
                 {product.images[0] ? (
-                  <Image alt={product.images[0].alt ?? product.name} className="h-52 w-full object-cover" src={product.images[0].url} width={800} height={600} />
-                ) : null}
-                <div className="space-y-3 p-4">
-                  <div>
-                    <p className="text-xs font-bold uppercase text-sage">{product.category?.name ?? "Bakery"}</p>
-                    <h3 className="text-xl font-black">{product.name}</h3>
-                    <p className="text-sm text-ink/70">{product.description}</p>
+                  <div className="border-b-2 border-ink">
+                    <Image alt={product.images[0].alt ?? product.name} className="h-52 w-full object-cover" src={product.images[0].url} width={800} height={600} />
                   </div>
-                  <p className="font-black text-jam">{formatMoney(product.priceCents)}</p>
-                  <p className="text-xs text-ink/60">Ingredients: {product.ingredients.join(", ") || "Ask for details"}</p>
-                  <p className="text-xs text-ink/60">Allergens: {product.allergens.join(", ") || "None listed"}</p>
+                ) : null}
+                <div className="flex flex-1 flex-col gap-3 p-4">
+                  <p className="text-xs font-black uppercase tracking-[0.2em] text-sage">{product.category?.name ?? "Bakery"}</p>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <h3 className="inline-block bg-jam px-2 py-1 text-xl font-black uppercase tracking-wide text-ink">
+                      {product.name}
+                    </h3>
+                    <p className="text-2xl font-black text-ink">{formatMoney(product.priceCents)}</p>
+                  </div>
+                  <p className="text-sm font-medium text-ink/75">{product.description}</p>
+                  <div className="mt-auto space-y-1 border-t-2 border-ink/15 pt-3">
+                    <p className="text-xs font-medium text-ink/60">Ingredients: {product.ingredients.join(", ") || "Ask for details"}</p>
+                    <p className="text-xs font-medium text-ink/60">Allergens: {product.allergens.join(", ") || "None listed"}</p>
+                  </div>
                   <AddToCartButton productId={product.id} disabled={!orderingOpen || soldOut} />
-                  {soldOut ? <span className="badge bg-jam text-white">Sold out</span> : null}
+                  {soldOut ? <span className="badge self-start bg-jam text-ink">Sold out</span> : null}
                 </div>
               </article>
             );
@@ -94,15 +106,18 @@ export default async function HomePage() {
       </section>
 
       <section className="section" id="events">
-        <h2 className="mb-4 text-2xl font-black">Upcoming events</h2>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="flex items-center gap-4">
+          <h2 className="font-display text-3xl uppercase tracking-wide text-ink sm:text-4xl">Upcoming events</h2>
+          <span className="h-1.5 flex-1 bg-jam" aria-hidden="true" />
+        </div>
+        <div className="mt-5 grid gap-4 md:grid-cols-3">
           {events.length ? events.map((event) => (
-            <div className="panel p-4" key={event.id}>
-              <p className="text-sm font-bold text-sage">{format(event.startsAt, "EEEE, MMM d, h:mm a")}</p>
-              <h3 className="font-black">{event.title}</h3>
-              <p className="text-sm text-ink/70">{event.location}</p>
+            <div className="border-2 border-ink bg-page p-4 shadow-hard" key={event.id}>
+              <p className="text-sm font-black uppercase tracking-widest text-sage">{format(event.startsAt, "EEEE, MMM d, h:mm a")}</p>
+              <h3 className="mt-1 text-lg font-black uppercase tracking-wide">{event.title}</h3>
+              <p className="text-sm font-medium text-ink/70">{event.location}</p>
             </div>
-          )) : <div className="panel p-4 text-sm text-ink/70">No events scheduled yet.</div>}
+          )) : <div className="border-2 border-ink bg-page p-4 text-sm font-medium text-ink/70 shadow-hard">No events scheduled yet.</div>}
         </div>
       </section>
     </main>
