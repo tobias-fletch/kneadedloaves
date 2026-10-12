@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Anton, Inter, Oswald } from "next/font/google";
 import Link from "next/link";
 import { UserRound } from "lucide-react";
 import { CartDrawerButton } from "@/components/CartDrawerButton";
@@ -18,6 +19,10 @@ export const metadata: Metadata = {
 
 export const dynamic = "force-dynamic";
 
+const anton = Anton({ weight: "400", subsets: ["latin"], variable: "--font-anton" });
+const oswald = Oswald({ weight: ["400", "500", "600", "700"], subsets: ["latin"], variable: "--font-oswald" });
+const inter = Inter({ weight: ["400", "500", "600", "700", "800"], subsets: ["latin"], variable: "--font-inter" });
+
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
   const [settings, deliveryZones, pickupLocations, appearance, contact] = await Promise.all([
@@ -35,15 +40,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   };
 
   return (
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800&family=Oswald:wght@400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
-      </head>
+    <html lang="en" className={`${anton.variable} ${oswald.variable} ${inter.variable}`}>
       <body style={appearanceToCssVars(appearance ?? defaultAppearance)}>
         <header className="sticky top-0 z-30 border-b-4 border-ink bg-[rgb(var(--color-page-rgb)/0.97)] backdrop-blur">
           <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
