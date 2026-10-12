@@ -1,4 +1,4 @@
-import Image from "next/image";
+import { MenuProductImage } from "@/components/MenuProductImage";
 import { format } from "date-fns";
 import { AddToCartButton } from "@/components/AddToCartButton";
 import { DatabaseSetup, databaseErrorMessage } from "@/components/DatabaseSetup";
@@ -79,9 +79,7 @@ export default async function HomePage() {
             return (
               <article className="flex flex-col border-2 border-ink bg-page shadow-hard" key={product.id}>
                 {product.images[0] ? (
-                  <div className="border-b-2 border-ink">
-                    <Image alt={product.images[0].alt ?? product.name} className="h-52 w-full object-cover" src={product.images[0].url} width={800} height={600} />
-                  </div>
+                  <MenuProductImage alt={product.images[0].alt ?? product.name} src={product.images[0].url} />
                 ) : null}
                 <div className="flex flex-1 flex-col gap-3 p-4">
                   <p className="text-xs font-black uppercase tracking-[0.2em] text-sage">{product.category?.name ?? "Bakery"}</p>
