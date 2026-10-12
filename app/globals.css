@@ -4,21 +4,35 @@
 
 :root {
   color-scheme: light;
-  --color-crust-rgb: 139 74 43;
-  --color-crumb-rgb: 248 231 210;
-  --color-butter-rgb: 246 200 95;
-  --color-jam-rgb: 159 43 69;
-  --color-sage-rgb: 99 117 91;
-  --color-ink-rgb: 45 33 27;
-  --color-page-rgb: 255 250 243;
-  --font-body: system-ui, sans-serif;
-  --font-heading: system-ui, sans-serif;
+  --color-crust-rgb: 168 90 42;
+  --color-crumb-rgb: 216 205 174;
+  --color-butter-rgb: 232 139 74;
+  --color-jam-rgb: 217 112 59;
+  --color-sage-rgb: 85 102 58;
+  --color-ink-rgb: 59 69 39;
+  --color-page-rgb: 233 228 211;
+  --font-body: Inter, system-ui, sans-serif;
+  --font-heading: Oswald, system-ui, sans-serif;
+  --font-display: Anton, Oswald, system-ui, sans-serif;
 }
 
 body {
   background: rgb(var(--color-page-rgb));
   color: rgb(var(--color-ink-rgb));
   font-family: var(--font-body);
+  position: relative;
+  isolation: isolate;
+}
+
+/* Subtle paper-grain texture over the cream background */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3CfeColorMatrix values='0 0 0 0 0.23 0 0 0 0 0.27 0 0 0 0 0.15 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
 h1,
@@ -27,14 +41,20 @@ h3 {
   font-family: var(--font-heading);
 }
 
+/* Heavy condensed display type for poster-style headings */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: 0.01em;
+}
+
 input,
 select,
 textarea {
-  @apply w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm text-ink outline-none ring-jam/20 transition focus:ring-4;
+  @apply w-full border-2 border-ink bg-page px-3 py-2 text-sm font-medium text-ink outline-none transition focus:border-crust focus:ring-2 focus:ring-jam/40;
 }
 
 label {
-  @apply text-sm font-semibold text-ink;
+  @apply text-sm font-bold uppercase tracking-wide text-ink;
 }
 
 .section {
@@ -42,21 +62,21 @@ label {
 }
 
 .panel {
-  @apply rounded-lg border border-amber-200 bg-white shadow-soft;
+  @apply border-2 border-ink bg-page shadow-hard;
 }
 
 .btn {
-  @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-md px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50;
+  @apply inline-flex min-h-11 items-center justify-center gap-2 border-2 border-ink px-5 py-2 text-sm font-black uppercase tracking-widest shadow-hard-sm transition disabled:cursor-not-allowed disabled:opacity-50 active:translate-x-[2px] active:translate-y-[2px] active:shadow-none;
 }
 
 .btn-primary {
-  @apply btn bg-jam text-white hover:bg-jam/90;
+  @apply btn bg-jam text-ink hover:bg-butter;
 }
 
 .btn-secondary {
-  @apply btn border border-amber-200 bg-white text-ink hover:bg-crumb;
+  @apply btn bg-crumb text-ink hover:bg-page;
 }
 
 .badge {
-  @apply inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold;
+  @apply inline-flex items-center gap-1 border-2 border-ink px-2.5 py-1 text-xs font-black uppercase tracking-widest;
 }
