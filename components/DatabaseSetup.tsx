@@ -23,6 +23,10 @@ npm run prisma:seed`}
 }
 
 export function databaseErrorMessage(error: unknown) {
-  if (error instanceof Error) return error.message.split("\n")[0];
+  if (error instanceof Error) {
+    // Show the full message (first 800 chars) — first line alone is often empty for Prisma errors
+    const msg = error.message.trim();
+    return msg ? msg.slice(0, 800) : `${error.name}: (empty message)`;
+  }
   return "Prisma could not connect to the configured database.";
 }
