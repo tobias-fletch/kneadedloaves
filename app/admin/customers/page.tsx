@@ -6,7 +6,7 @@ export default async function AdminCustomersPage() {
     where: { role: "CUSTOMER" },
     include: { customerProfile: true, orders: true },
     orderBy: { createdAt: "desc" }
-  });
+  }).catch(() => []);
   return (
     <section className="panel overflow-hidden">
       <div className="border-b border-amber-200 p-4">
