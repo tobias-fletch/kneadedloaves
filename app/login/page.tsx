@@ -5,7 +5,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     <main className="section flex min-h-[70vh] items-center justify-center">
       <form className="panel w-full max-w-md space-y-4 p-5" action="/api/auth/login" method="post">
         <div>
-          <h1 className="text-2xl font-black">Sign in</h1>
+          <h1 className="font-display text-3xl uppercase tracking-wide">Sign in</h1>
           <p className="mt-1 text-sm text-ink/70">Welcome back to Kneaded Loaves.</p>
         </div>
         <div>
