@@ -60,10 +60,10 @@ export function ContactButton({ contact }: { contact: ContactDetails }) {
 
       {open ? (
         <div className="fixed inset-0 z-50 flex items-end bg-ink/55 p-3 sm:items-center sm:justify-center">
-          <div className="max-h-[92vh] w-full overflow-y-auto rounded-lg bg-[#fffaf3] shadow-soft sm:max-w-lg">
-            <div className="flex items-center justify-between border-b border-amber-200 p-4">
+          <div className="max-h-[92vh] w-full overflow-y-auto border-4 border-ink bg-page shadow-hard sm:max-w-lg">
+            <div className="flex items-center justify-between border-b-2 border-ink bg-crumb p-4">
               <div>
-                <h2 className="text-xl font-black">Contact {contact.bakeryName}</h2>
+                <h2 className="font-display text-2xl uppercase tracking-wide">Contact {contact.bakeryName}</h2>
                 <p className="mt-1 text-sm text-ink/70">Send a message here, or use your own email app.</p>
               </div>
               <button className="btn-secondary px-3" type="button" aria-label="Close contact popup" onClick={() => setOpen(false)}>
@@ -98,7 +98,7 @@ export function ContactButton({ contact }: { contact: ContactDetails }) {
               </form>
 
               {message ? (
-                <p className={`rounded-md p-3 text-sm font-semibold ${status === "sent" ? "bg-sage text-white" : "bg-crumb text-jam"}`}>
+                <p className={`border-2 border-ink p-3 text-sm font-bold ${status === "sent" ? "bg-sage text-white" : "bg-crumb text-ink"}`}>
                   {message}
                 </p>
               ) : null}
