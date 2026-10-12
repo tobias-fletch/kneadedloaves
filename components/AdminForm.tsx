@@ -6,6 +6,16 @@ import { useState } from "react";
 export function ProductForm({ categories }: { categories: { id: string; name: string }[] }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
+  const [selectedArt, setSelectedArt] = useState("");
+
+  const menuArt = [
+    { value: "", label: "Choose pixel art (or enter URL below)" },
+    { value: "/menu-art/focaccia.jpg", label: "🍞 Focaccia" },
+    { value: "/menu-art/herb-focaccia.jpg", label: "🌿 Herb Focaccia" },
+    { value: "/menu-art/artisan-bread.jpg", label: "🥖 Artisan Bread" },
+    { value: "/menu-art/bagels.jpg", label: "🥯 Bagels" },
+    { value: "/menu-art/cookies.jpg", label: "🍪 Cookies" },
+  ];
 
   async function uploadImage(file: File) {
     if (!file.size) return "";
@@ -39,7 +49,7 @@ export function ProductForm({ categories }: { categories: { id: string; name: st
       inventoryLimit: Number(formData.get("inventoryLimit") ?? 0),
       soldOut: formData.get("soldOut") === "on",
       active: true,
-      imageUrl: uploadedUrl || formData.get("imageUrl")
+      imageUrl: uploadedUrl || selectedArt || formData.get("imageUrl")
     };
     const response = await fetch("/api/admin/products", {
       method: "POST",
@@ -75,7 +85,20 @@ export function ProductForm({ categories }: { categories: { id: string; name: st
       </select>
       <input name="ingredients" placeholder="Ingredients, comma-separated" />
       <input name="allergens" placeholder="Allergens, comma-separated" />
-      <input name="imageUrl" placeholder="Image URL" type="url" />
+      <select value={selectedArt} onChange={(e) => setSelectedArt(e.target.value)}>
+        {menuArt.map((art) => (
+          <option key={art.value} value={art.value}>
+            {art.label}
+          </option>
+        ))}
+      </select>
+      {selectedArt && (
+        <div className="flex items-center gap-3">
+          <img src={selectedArt} alt="Preview" className="h-16 w-16 rounded border-2 border-ink object-cover" />
+          <span className="text-sm font-semibold">Preview</span>
+        </div>
+      )}
+      <input name="imageUrl" placeholder="Or paste image URL" type="url" />
       <input name="imageFile" accept="image/jpeg,image/png,image/webp,image/gif" type="file" />
       <label className="flex items-center gap-2">
         <input className="h-4 w-4" name="soldOut" type="checkbox" />
