@@ -36,13 +36,24 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
   return (
     <html lang="en">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;500;600;700;800&family=Oswald:wght@400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
       <body style={appearanceToCssVars(appearance ?? defaultAppearance)}>
-        <header className="sticky top-0 z-30 border-b border-amber-200 bg-[rgb(var(--color-page-rgb)/0.95)] backdrop-blur">
+        <header className="sticky top-0 z-30 border-b-4 border-ink bg-[rgb(var(--color-page-rgb)/0.97)] backdrop-blur">
           <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-            <Link href="/" className="text-lg font-black tracking-normal text-jam">
-              {publicSettings.bakeryName}
+            <Link href="/" className="flex items-center gap-3">
+              <span className="hidden h-9 w-2.5 bg-jam sm:block" aria-hidden="true" />
+              <span className="font-display text-2xl uppercase leading-none tracking-wide text-ink">
+                {publicSettings.bakeryName}
+              </span>
             </Link>
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
               <CartDrawerButton deliveryZones={deliveryZones} pickupLocations={pickupLocations} />
               {session?.role === "ADMIN" ? (
                 <Link className="btn-primary px-3" href="/admin">
