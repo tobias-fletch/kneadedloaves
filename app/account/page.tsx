@@ -11,7 +11,7 @@ export default async function AccountPage() {
     return (
       <main className="section">
         <div className="panel p-5">
-          <h1 className="text-2xl font-black">Account</h1>
+          <h1 className="font-display text-3xl uppercase tracking-wide">Account</h1>
           <p className="mt-2 text-ink/70">Sign in to see order history.</p>
           <Link className="btn-primary mt-4" href="/login">Sign in</Link>
         </div>
@@ -27,14 +27,14 @@ export default async function AccountPage() {
 
   return (
     <main className="section space-y-4">
-      <h1 className="text-3xl font-black">Order history</h1>
+      <h1 className="font-display text-4xl uppercase tracking-wide">Order history</h1>
       <form action="/api/auth/logout" method="post"><button className="btn-secondary">Sign out of all sessions</button></form>
       <details><summary>Change password</summary><AccountForm action="change-password" /></details>
       {orders.length ? orders.map((order) => (
         <div className="panel p-4" key={order.id}>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <p className="font-black">{format(order.createdAt, "MMM d, yyyy h:mm a")}</p>
+              <p className="font-black uppercase tracking-wide">{format(order.createdAt, "MMM d, yyyy h:mm a")}</p>
               <p className="text-xs font-semibold text-ink/60">Order #{order.id.slice(-6).toUpperCase()}</p>
             </div>
             <span className="badge bg-crumb text-ink">{order.status.replaceAll("_", " ")}</span>
