@@ -1,3 +1,30 @@
+-- Clean slate: drop partial tables
+DROP TABLE IF EXISTS "User" CASCADE;
+DROP TABLE IF EXISTS "CustomerProfile" CASCADE;
+DROP TABLE IF EXISTS "Category" CASCADE;
+DROP TABLE IF EXISTS "Product" CASCADE;
+DROP TABLE IF EXISTS "ProductImage" CASCADE;
+DROP TABLE IF EXISTS "Cart" CASCADE;
+DROP TABLE IF EXISTS "CartItem" CASCADE;
+DROP TABLE IF EXISTS "Order" CASCADE;
+DROP TABLE IF EXISTS "OrderItem" CASCADE;
+DROP TABLE IF EXISTS "OrderWindow" CASCADE;
+DROP TABLE IF EXISTS "DeliveryZone" CASCADE;
+DROP TABLE IF EXISTS "PickupLocation" CASCADE;
+DROP TABLE IF EXISTS "PopupEvent" CASCADE;
+DROP TABLE IF EXISTS "SocialPost" CASCADE;
+DROP TABLE IF EXISTS "SocialPlatformAccount" CASCADE;
+DROP TABLE IF EXISTS "SocialPostAsset" CASCADE;
+DROP TABLE IF EXISTS "ContentTemplate" CASCADE;
+DROP TABLE IF EXISTS "EmailSubscriber" CASCADE;
+DROP TABLE IF EXISTS "AdminSettings" CASCADE;
+DROP TABLE IF EXISTS "_EventProducts" CASCADE;
+DROP TABLE IF EXISTS "AppConfig" CASCADE;
+DROP TABLE IF EXISTS "RateLimit" CASCADE;
+DROP TABLE IF EXISTS "PasswordReset" CASCADE;
+DROP TABLE IF EXISTS "EmailJob" CASCADE;
+DROP TABLE IF EXISTS "_prisma_migrations" CASCADE;
+
 -- Prisma migration history table (created by Prisma automatically)
 CREATE TABLE IF NOT EXISTS "_prisma_migrations" (
     "id" VARCHAR(36) NOT NULL,
@@ -32,7 +59,7 @@ CREATE TYPE "SocialPlatform" AS ENUM ('INSTAGRAM', 'TIKTOK', 'FACEBOOK', 'YOUTUB
 CREATE TYPE "SocialPostStatus" AS ENUM ('DRAFT', 'NEEDS_REVIEW', 'APPROVED', 'SCHEDULED', 'POSTED', 'FAILED', 'REJECTED');
 
 -- CreateTable
-CREATE TABLE "User" (
+CREATE TABLE IF NOT EXISTS "User" (
     "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "name" TEXT,
@@ -44,7 +71,7 @@ CREATE TABLE "User" (
 );
 
 -- CreateTable
-CREATE TABLE "CustomerProfile" (
+CREATE TABLE IF NOT EXISTS "CustomerProfile" (
     "id" TEXT NOT NULL,
     "userId" TEXT NOT NULL,
     "phone" TEXT,
@@ -60,7 +87,7 @@ CREATE TABLE "CustomerProfile" (
 );
 
 -- CreateTable
-CREATE TABLE "Category" (
+CREATE TABLE IF NOT EXISTS "Category" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "slug" TEXT NOT NULL,
@@ -69,7 +96,7 @@ CREATE TABLE "Category" (
 );
 
 -- CreateTable
-CREATE TABLE "Product" (
+CREATE TABLE IF NOT EXISTS "Product" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "slug" TEXT NOT NULL,
@@ -89,7 +116,7 @@ CREATE TABLE "Product" (
 );
 
 -- CreateTable
-CREATE TABLE "ProductImage" (
+CREATE TABLE IF NOT EXISTS "ProductImage" (
     "id" TEXT NOT NULL,
     "productId" TEXT NOT NULL,
     "url" TEXT NOT NULL,
@@ -99,7 +126,7 @@ CREATE TABLE "ProductImage" (
 );
 
 -- CreateTable
-CREATE TABLE "Cart" (
+CREATE TABLE IF NOT EXISTS "Cart" (
     "id" TEXT NOT NULL,
     "userId" TEXT,
     "sessionId" TEXT,
@@ -109,7 +136,7 @@ CREATE TABLE "Cart" (
 );
 
 -- CreateTable
-CREATE TABLE "CartItem" (
+CREATE TABLE IF NOT EXISTS "CartItem" (
     "id" TEXT NOT NULL,
     "cartId" TEXT NOT NULL,
     "productId" TEXT NOT NULL,
@@ -120,7 +147,7 @@ CREATE TABLE "CartItem" (
 );
 
 -- CreateTable
-CREATE TABLE "Order" (
+CREATE TABLE IF NOT EXISTS "Order" (
     "id" TEXT NOT NULL,
     "userId" TEXT,
     "customerEmail" TEXT NOT NULL,
@@ -141,7 +168,7 @@ CREATE TABLE "Order" (
 );
 
 -- CreateTable
-CREATE TABLE "OrderItem" (
+CREATE TABLE IF NOT EXISTS "OrderItem" (
     "id" TEXT NOT NULL,
     "orderId" TEXT NOT NULL,
     "productId" TEXT NOT NULL,
@@ -152,7 +179,7 @@ CREATE TABLE "OrderItem" (
 );
 
 -- CreateTable
-CREATE TABLE "OrderWindow" (
+CREATE TABLE IF NOT EXISTS "OrderWindow" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "opensAt" TIMESTAMP(3) NOT NULL,
@@ -167,7 +194,7 @@ CREATE TABLE "OrderWindow" (
 );
 
 -- CreateTable
-CREATE TABLE "DeliveryZone" (
+CREATE TABLE IF NOT EXISTS "DeliveryZone" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "zipCodes" TEXT[],
@@ -180,7 +207,7 @@ CREATE TABLE "DeliveryZone" (
 );
 
 -- CreateTable
-CREATE TABLE "PickupLocation" (
+CREATE TABLE IF NOT EXISTS "PickupLocation" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "address" TEXT NOT NULL,
@@ -192,7 +219,7 @@ CREATE TABLE "PickupLocation" (
 );
 
 -- CreateTable
-CREATE TABLE "PopupEvent" (
+CREATE TABLE IF NOT EXISTS "PopupEvent" (
     "id" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "startsAt" TIMESTAMP(3) NOT NULL,
@@ -206,7 +233,7 @@ CREATE TABLE "PopupEvent" (
 );
 
 -- CreateTable
-CREATE TABLE "SocialPost" (
+CREATE TABLE IF NOT EXISTS "SocialPost" (
     "id" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "caption" TEXT NOT NULL,
@@ -226,7 +253,7 @@ CREATE TABLE "SocialPost" (
 );
 
 -- CreateTable
-CREATE TABLE "SocialPlatformAccount" (
+CREATE TABLE IF NOT EXISTS "SocialPlatformAccount" (
     "id" TEXT NOT NULL,
     "platform" "SocialPlatform" NOT NULL,
     "handle" TEXT NOT NULL,
@@ -239,7 +266,7 @@ CREATE TABLE "SocialPlatformAccount" (
 );
 
 -- CreateTable
-CREATE TABLE "SocialPostAsset" (
+CREATE TABLE IF NOT EXISTS "SocialPostAsset" (
     "id" TEXT NOT NULL,
     "socialPostId" TEXT NOT NULL,
     "url" TEXT NOT NULL,
@@ -249,7 +276,7 @@ CREATE TABLE "SocialPostAsset" (
 );
 
 -- CreateTable
-CREATE TABLE "ContentTemplate" (
+CREATE TABLE IF NOT EXISTS "ContentTemplate" (
     "id" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "type" TEXT NOT NULL,
@@ -262,7 +289,7 @@ CREATE TABLE "ContentTemplate" (
 );
 
 -- CreateTable
-CREATE TABLE "EmailSubscriber" (
+CREATE TABLE IF NOT EXISTS "EmailSubscriber" (
     "id" TEXT NOT NULL,
     "email" TEXT NOT NULL,
     "firstName" TEXT,
@@ -272,7 +299,7 @@ CREATE TABLE "EmailSubscriber" (
 );
 
 -- CreateTable
-CREATE TABLE "AdminSettings" (
+CREATE TABLE IF NOT EXISTS "AdminSettings" (
     "id" TEXT NOT NULL,
     "bakeryName" TEXT NOT NULL,
     "logoUrl" TEXT,
@@ -294,23 +321,23 @@ CREATE TABLE "AdminSettings" (
 );
 
 -- CreateTable
-CREATE TABLE "_EventProducts" (
+CREATE TABLE IF NOT EXISTS "_EventProducts" (
     "A" TEXT NOT NULL,
     "B" TEXT NOT NULL,
     CONSTRAINT "_EventProducts_AB_pkey" PRIMARY KEY ("A","B")
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
-CREATE UNIQUE INDEX "CustomerProfile_userId_key" ON "CustomerProfile"("userId");
-CREATE UNIQUE INDEX "Category_name_key" ON "Category"("name");
-CREATE UNIQUE INDEX "Category_slug_key" ON "Category"("slug");
-CREATE UNIQUE INDEX "Product_slug_key" ON "Product"("slug");
-CREATE UNIQUE INDEX "Cart_userId_key" ON "Cart"("userId");
-CREATE UNIQUE INDEX "Cart_sessionId_key" ON "Cart"("sessionId");
-CREATE UNIQUE INDEX "CartItem_cartId_productId_key" ON "CartItem"("cartId", "productId");
-CREATE UNIQUE INDEX "EmailSubscriber_email_key" ON "EmailSubscriber"("email");
-CREATE INDEX "_EventProducts_B_index" ON "_EventProducts"("B");
+CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email");
+CREATE UNIQUE INDEX IF NOT EXISTS "CustomerProfile_userId_key" ON "CustomerProfile"("userId");
+CREATE UNIQUE INDEX IF NOT EXISTS "Category_name_key" ON "Category"("name");
+CREATE UNIQUE INDEX IF NOT EXISTS "Category_slug_key" ON "Category"("slug");
+CREATE UNIQUE INDEX IF NOT EXISTS "Product_slug_key" ON "Product"("slug");
+CREATE UNIQUE INDEX IF NOT EXISTS "Cart_userId_key" ON "Cart"("userId");
+CREATE UNIQUE INDEX IF NOT EXISTS "Cart_sessionId_key" ON "Cart"("sessionId");
+CREATE UNIQUE INDEX IF NOT EXISTS "CartItem_cartId_productId_key" ON "CartItem"("cartId", "productId");
+CREATE UNIQUE INDEX IF NOT EXISTS "EmailSubscriber_email_key" ON "EmailSubscriber"("email");
+CREATE INDEX IF NOT EXISTS "_EventProducts_B_index" ON "_EventProducts"("B");
 
 -- AddForeignKey
 ALTER TABLE "CustomerProfile" ADD CONSTRAINT "CustomerProfile_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -352,7 +379,7 @@ ON CONFLICT DO NOTHING;
 
 -- ==================== Migration: 20260706215755_admin_setup_config ====================
 -- CreateTable
-CREATE TABLE "AppConfig" (
+CREATE TABLE IF NOT EXISTS "AppConfig" (
     "key" TEXT NOT NULL,
     "value" TEXT NOT NULL,
     "secret" BOOLEAN NOT NULL DEFAULT true,
@@ -370,19 +397,19 @@ ON CONFLICT DO NOTHING;
 ALTER TABLE "User" ADD COLUMN "sessionVersion" INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE "Order" ADD COLUMN "receiptTokenHash" TEXT;
 ALTER TABLE "Order" ADD COLUMN "inventoryRestored" BOOLEAN NOT NULL DEFAULT false;
-CREATE UNIQUE INDEX "Order_receiptTokenHash_key" ON "Order"("receiptTokenHash");
-CREATE TABLE "RateLimit" ("key" TEXT PRIMARY KEY, "count" INTEGER NOT NULL DEFAULT 1, "expiresAt" TIMESTAMP(3) NOT NULL);
-CREATE INDEX "RateLimit_expiresAt_idx" ON "RateLimit"("expiresAt");
-CREATE TABLE "PasswordReset" ("tokenHash" TEXT PRIMARY KEY, "userId" TEXT NOT NULL, "expiresAt" TIMESTAMP(3) NOT NULL);
-CREATE INDEX "PasswordReset_expiresAt_idx" ON "PasswordReset"("expiresAt");
-CREATE TABLE "EmailJob" (
+CREATE UNIQUE INDEX IF NOT EXISTS "Order_receiptTokenHash_key" ON "Order"("receiptTokenHash");
+CREATE TABLE IF NOT EXISTS "RateLimit" ("key" TEXT PRIMARY KEY, "count" INTEGER NOT NULL DEFAULT 1, "expiresAt" TIMESTAMP(3) NOT NULL);
+CREATE INDEX IF NOT EXISTS "RateLimit_expiresAt_idx" ON "RateLimit"("expiresAt");
+CREATE TABLE IF NOT EXISTS "PasswordReset" ("tokenHash" TEXT PRIMARY KEY, "userId" TEXT NOT NULL, "expiresAt" TIMESTAMP(3) NOT NULL);
+CREATE INDEX IF NOT EXISTS "PasswordReset_expiresAt_idx" ON "PasswordReset"("expiresAt");
+CREATE TABLE IF NOT EXISTS "EmailJob" (
   "id" TEXT PRIMARY KEY, "dedupeKey" TEXT NOT NULL, "to" TEXT NOT NULL, "subject" TEXT NOT NULL, "body" TEXT NOT NULL,
   "attempts" INTEGER NOT NULL DEFAULT 0, "status" TEXT NOT NULL DEFAULT 'PENDING', "lastError" TEXT,
   "availableAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "lockedUntil" TIMESTAMP(3),
   "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP, "sentAt" TIMESTAMP(3)
 );
-CREATE UNIQUE INDEX "EmailJob_dedupeKey_key" ON "EmailJob"("dedupeKey");
-CREATE INDEX "EmailJob_status_availableAt_idx" ON "EmailJob"("status", "availableAt");
+CREATE UNIQUE INDEX IF NOT EXISTS "EmailJob_dedupeKey_key" ON "EmailJob"("dedupeKey");
+CREATE INDEX IF NOT EXISTS "EmailJob_status_availableAt_idx" ON "EmailJob"("status", "availableAt");
 
 INSERT INTO "_prisma_migrations" ("id", "checksum", "finished_at", "migration_name", "logs", "applied_steps_count")
 VALUES (gen_random_uuid()::text, '', now(), '20260914030000_production_hardening', '', 1)
