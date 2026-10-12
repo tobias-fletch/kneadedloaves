@@ -75,7 +75,7 @@ async function soldCounts(productIds: string[], since?: Date) {
       order: since ? { createdAt: { gte: since }, status: { not: "CANCELLED" } } : { status: { not: "CANCELLED" } }
     },
     _sum: { quantity: true }
-  });
+  }).catch(() => []);
   return new Map(rows.flatMap((row) => (row.productId ? [[row.productId, row._sum.quantity ?? 0] as const] : [])));
 }
 
