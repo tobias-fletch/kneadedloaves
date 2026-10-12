@@ -71,7 +71,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
   }
   return NextResponse.json({ message: "Password changed. Sign in again with your new password." });
   } catch (error) {
-    console.error("Auth action error:", error instanceof Error ? error.message : error);
-    return NextResponse.json({ error: "Something went wrong. Please try again." }, { status: 500 });
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error("Auth action error:", msg);
+    return NextResponse.json({ error: `Debug: ${msg}` }, { status: 500 });
   }
 }
