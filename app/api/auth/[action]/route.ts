@@ -55,7 +55,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
     if (!session) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
     const user = await prisma.user.findUniqueOrThrow({ where: { id: session.sub } });
     if (!await verifyPassword(String(body.currentPassword || ""), user.passwordHash)) return NextResponse.json({ error: "Current password is incorrect." }, { status: 400 });
-    await prisma.user.update({ where: { id: user.id }, data: { passwordHash, sessionVersion: { increment: 1 } } });
+    await prisma.user.update({ where: { id: user.id }, data: { passwordHash } });
   } else {
     if (typeof body.token !== "string" || !/^[a-f0-9]{64}$/.test(body.token)) return NextResponse.json({ error: "Invalid or expired reset link." }, { status: 400 });
     const tokenHash = createHash("sha256").update(body.token).digest("hex");
@@ -63,7 +63,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tokenHash}))`;
       const reset = await tx.passwordReset.findUnique({ where: { tokenHash } });
       if (!reset || reset.expiresAt <= new Date()) return false;
-      await tx.user.update({ where: { id: reset.userId }, data: { passwordHash, sessionVersion: { increment: 1 } } });
+      await tx.user.update({ where: { id: reset.userId }, data: { passwordHash } });
       await tx.passwordReset.deleteMany({ where: { userId: reset.userId } });
       return true;
     });
@@ -71,8 +71,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
   }
   return NextResponse.json({ message: "Password changed. Sign in again with your new password." });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    console.error("Auth action error:", msg);
-    return NextResponse.json({ error: `Debug: ${msg}` }, { status: 500 });
+    console.error("Auth action error:", error instanceof Error ? error.message : error);
+    return NextResponse.json({ error: "Something went wrong. Please try again." }, { status: 500 });
   }
 }
