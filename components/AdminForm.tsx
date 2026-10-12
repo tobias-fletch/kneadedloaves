@@ -38,11 +38,12 @@ export function ProductForm({ categories }: { categories: { id: string; name: st
       return;
     }
 
+    const priceDollars = Number(formData.get("priceDollars") ?? 0);
     const payload = {
       name: formData.get("name"),
       slug: formData.get("slug"),
       description: formData.get("description"),
-      priceCents: Number(formData.get("priceCents")),
+      priceCents: Math.round(priceDollars * 100),
       categoryId: formData.get("categoryId") || null,
       allergens: String(formData.get("allergens") ?? "").split(",").map((x) => x.trim()).filter(Boolean),
       ingredients: String(formData.get("ingredients") ?? "").split(",").map((x) => x.trim()).filter(Boolean),
@@ -72,7 +73,7 @@ export function ProductForm({ categories }: { categories: { id: string; name: st
       <input name="slug" placeholder="product-slug" required />
       <textarea name="description" placeholder="Description" required rows={3} />
       <div className="grid grid-cols-2 gap-3">
-        <input name="priceCents" placeholder="Price cents" required type="number" />
+        <input name="priceDollars" placeholder="Price ($)" required type="number" step="0.01" min="0" />
         <input name="inventoryLimit" placeholder="Inventory" required type="number" />
       </div>
       <select name="categoryId">
