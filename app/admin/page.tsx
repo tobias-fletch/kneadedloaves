@@ -5,11 +5,11 @@ import { getSetupChecklist } from "@/lib/setup-checklist";
 
 export default async function AdminPage() {
   const [orders, products, posts, windows, setup] = await Promise.all([
-    prisma.order.findMany({ orderBy: { createdAt: "desc" }, take: 6 }),
-    prisma.product.count(),
-    prisma.socialPost.groupBy({ by: ["status"], _count: true }),
-    prisma.orderWindow.findMany({ orderBy: { opensAt: "desc" }, take: 3 }),
-    getSetupChecklist()
+    prisma.order.findMany({ orderBy: { createdAt: "desc" }, take: 6 }).catch(() => []),
+    prisma.product.count().catch(() => 0),
+    prisma.socialPost.groupBy({ by: ["status"], _count: true }).catch(() => []),
+    prisma.orderWindow.findMany({ orderBy: { opensAt: "desc" }, take: 3 }).catch(() => []),
+    getSetupChecklist().catch(() => ({ completeCount: 0, totalCount: 0, incomplete: [] }))
   ]);
   const revenue = orders.reduce((sum, order) => sum + order.totalCents, 0);
 
