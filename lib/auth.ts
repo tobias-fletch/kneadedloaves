@@ -41,8 +41,8 @@ export async function getSession() {
   try {
     const payload = jwt.verify(token, await jwtSecret(), { algorithms: ["HS256"] }) as SessionPayload;
     const user = await prisma.user.findUnique({ where: { id: payload.sub } });
-    if (!user || user.sessionVersion !== (payload.version ?? 0)) return null;
-    return { sub: user.id, email: user.email, name: user.name, role: user.role, version: user.sessionVersion };
+    if (!user) return null;
+    return { sub: user.id, email: user.email, name: user.name, role: user.role };
   } catch {
     return null;
   }
@@ -67,7 +67,6 @@ export async function authenticate(email: string, password: string) {
   if (!valid) return null;
   if (process.env.NODE_ENV === "production" && ["admin12345", "customer12345"].includes(password)) return null;
   return {
-    version: user.sessionVersion,
     sub: user.id,
     email: user.email,
     role: user.role,
