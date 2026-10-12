@@ -11,9 +11,9 @@
   --color-sage-rgb: 85 102 58;
   --color-ink-rgb: 59 69 39;
   --color-page-rgb: 233 228 211;
-  --font-body: Inter, system-ui, sans-serif;
-  --font-heading: Oswald, system-ui, sans-serif;
-  --font-display: Anton, Oswald, system-ui, sans-serif;
+  --font-body: var(--font-inter), Inter, system-ui, sans-serif;
+  --font-heading: var(--font-oswald), Oswald, system-ui, sans-serif;
+  --font-display: var(--font-anton), Anton, Oswald, system-ui, sans-serif;
 }
 
 body {
