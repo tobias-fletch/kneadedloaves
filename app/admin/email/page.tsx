@@ -3,7 +3,7 @@ import { EmailTemplateForm } from "@/components/EmailTemplateForm";
 import { getOrderEmailTemplates } from "@/lib/email";
 
 export default async function AdminEmailPage() {
-  const jobs = await prisma.emailJob.findMany({ orderBy: { createdAt: "desc" }, take: 30 });
+  const jobs = await prisma.emailJob.findMany({ orderBy: { createdAt: "desc" }, take: 30 }).catch(() => []);
   const templates = await getOrderEmailTemplates();
 
   return (
