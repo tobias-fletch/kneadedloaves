@@ -36,6 +36,16 @@ export function ProductManager({
   const router = useRouter();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [message, setMessage] = useState("");
+  const [editArt, setEditArt] = useState("");
+
+  const menuArt = [
+    { value: "", label: "Keep current / choose pixel art" },
+    { value: "/menu-art/focaccia.jpg", label: "🍞 Focaccia" },
+    { value: "/menu-art/herb-focaccia.jpg", label: "🌿 Herb Focaccia" },
+    { value: "/menu-art/artisan-bread.jpg", label: "🥖 Artisan Bread" },
+    { value: "/menu-art/bagels.jpg", label: "🥯 Bagels" },
+    { value: "/menu-art/cookies.jpg", label: "🍪 Cookies" },
+  ];
 
   async function uploadImage(file: File) {
     if (!file.size) return "";
@@ -62,7 +72,7 @@ export function ProductManager({
       name: formData.get("name"),
       slug: formData.get("slug"),
       description: formData.get("description"),
-      priceCents: Number(formData.get("priceCents")),
+      priceCents: Math.round(Number(formData.get("priceDollars") ?? 0) * 100),
       categoryId: formData.get("categoryId") || null,
       ingredients: String(formData.get("ingredients") ?? "").split(",").map((item) => item.trim()).filter(Boolean),
       allergens: String(formData.get("allergens") ?? "").split(",").map((item) => item.trim()).filter(Boolean),
@@ -70,7 +80,7 @@ export function ProductManager({
       soldOut: formData.get("soldOut") === "on",
       active: formData.get("active") === "on",
       imageId: formData.get("imageId") || null,
-      imageUrl: uploadedUrl || formData.get("imageUrl")
+      imageUrl: uploadedUrl || editArt || formData.get("imageUrl")
     };
     const response = await fetch(`/api/admin/products/${productId}`, {
       method: "PATCH",
@@ -115,7 +125,7 @@ export function ProductManager({
               </div>
               <textarea name="description" defaultValue={product.description} rows={3} required />
               <div className="grid gap-3 sm:grid-cols-3">
-                <input name="priceCents" defaultValue={product.priceCents} type="number" required />
+                <input name="priceDollars" defaultValue={(product.priceCents / 100).toFixed(2)} type="number" step="0.01" min="0" required />
                 <input name="inventoryLimit" defaultValue={product.inventoryLimit} type="number" required />
                 <select name="categoryId" defaultValue={product.categoryId ?? ""}>
                   <option value="">No category</option>
@@ -129,7 +139,14 @@ export function ProductManager({
               <input name="ingredients" defaultValue={product.ingredients.join(", ")} />
               <input name="allergens" defaultValue={product.allergens.join(", ")} />
               <input name="imageId" type="hidden" defaultValue={product.imageId ?? ""} />
-              <input name="imageUrl" defaultValue={product.imageUrl ?? ""} placeholder="Image URL" type="url" />
+              <select value={editArt} onChange={(e) => setEditArt(e.target.value)}>
+                {menuArt.map((art) => (
+                  <option key={art.value} value={art.value}>
+                    {art.label}
+                  </option>
+                ))}
+              </select>
+              <input name="imageUrl" defaultValue={product.imageUrl ?? ""} placeholder="Or paste image URL" />
               <input name="imageFile" accept="image/jpeg,image/png,image/webp,image/gif" type="file" />
               <div className="flex flex-wrap gap-3 text-sm font-semibold">
                 <label className="flex items-center gap-2">
@@ -166,7 +183,7 @@ export function ProductManager({
                 </div>
               </div>
               <div className="flex gap-2 sm:flex-col">
-                <button className="btn-secondary" type="button" onClick={() => setEditingId(product.id)}>
+                <button className="btn-secondary" type="button" onClick={() => { setEditingId(product.id); setEditArt(""); }}>
                   Edit
                 </button>
                 <button className="btn-secondary text-jam" type="button" onClick={() => remove(product.id)}>
