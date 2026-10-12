@@ -3,8 +3,8 @@ import { prisma } from "@/lib/prisma";
 
 export default async function AdminEventsPage() {
   const [events, products] = await Promise.all([
-    prisma.popupEvent.findMany({ include: { products: true }, orderBy: { startsAt: "desc" } }),
-    prisma.product.findMany({ orderBy: { name: "asc" } })
+    prisma.popupEvent.findMany({ include: { products: true }, orderBy: { startsAt: "desc" } }).catch(() => []),
+    prisma.product.findMany({ orderBy: { name: "asc" } }).catch(() => [])
   ]);
   return (
     <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
