@@ -9,8 +9,9 @@ import { queueEmail, smtpTransport } from "@/lib/email-queue";
 const emailSchema = z.string().trim().toLowerCase().email().max(254);
 const passwordSchema = z.string().min(12).max(72).refine(value => Buffer.byteLength(value, "utf8") <= 72 && !["admin12345", "customer12345"].includes(value));
 export async function POST(request: Request, { params }: { params: Promise<{ action: string }> }) {
-  const { action } = await params;
-  if (!["register", "forgot-password", "reset-password", "change-password"].includes(action)) return NextResponse.json({ error: "Not found." }, { status: 404 });
+  try {
+    const { action } = await params;
+    if (!["register", "forgot-password", "reset-password", "change-password"].includes(action)) return NextResponse.json({ error: "Not found." }, { status: 404 });
   if (!await rateLimit(request, `auth:${action}`, 10)) return NextResponse.json({ error: "Too many attempts. Try again in 10 minutes." }, { status: 429 });
   const body = await readJson(request);
   if (action === "register") {
@@ -69,4 +70,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
     if (!changed) return NextResponse.json({ error: "Invalid or expired reset link." }, { status: 400 });
   }
   return NextResponse.json({ message: "Password changed. Sign in again with your new password." });
+  } catch (error) {
+    console.error("Auth action error:", error instanceof Error ? error.message : error);
+    return NextResponse.json({ error: "Something went wrong. Please try again." }, { status: 500 });
+  }
 }
