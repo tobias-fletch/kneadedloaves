@@ -2,7 +2,7 @@ export function DatabaseSetup({ detail }: { detail?: string }) {
   return (
     <main className="section">
       <div className="panel max-w-3xl p-5">
-        <span className="badge bg-jam text-white">Database setup needed</span>
+        <span className="badge bg-jam text-ink">Database setup needed</span>
         <h1 className="mt-4 text-3xl font-black">Connect PostgreSQL to finish local setup</h1>
         <p className="mt-3 text-sm leading-6 text-ink/75">
           The app is running, but Prisma cannot connect to the database configured in `.env`. Update
