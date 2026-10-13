@@ -1,6 +1,9 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Public, owner-approved canonical origin for the Vercel production deployment.
+  // Embed it in Edge/server bundles; never derive a trusted origin from request headers.
+  ...(process.env.VERCEL_ENV === "production" ? { env: { APP_URL: "https://kneadedloaves.com" } } : {}),
   distDir: process.env.NODE_ENV === "development" ? ".next-dev" : ".next",
   poweredByHeader: false,
   async headers() {
