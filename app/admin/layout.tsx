@@ -10,7 +10,8 @@ const links = [
   ["/admin/customers", "Customers"],
   ["/admin/email", "Email"],
   ["/admin/social", "Social"],
-  ["/admin/setup", "Setup"]
+  ["/admin/setup", "Setup"],
+  ["/admin/test-checkout", "Test checkout"]
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
