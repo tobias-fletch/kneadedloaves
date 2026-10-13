@@ -10,3 +10,5 @@ backups
 uploads
 *.log
 *.tsbuildinfo
+
+dist-workers

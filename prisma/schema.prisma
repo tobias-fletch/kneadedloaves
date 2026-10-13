@@ -48,6 +48,7 @@ model User {
   id              String           @id @default(cuid())
   email           String           @unique
   name            String?
+  sessionVersion  Int              @default(0)
   passwordHash    String
   role            Role             @default(CUSTOMER)
   customerProfile CustomerProfile?
@@ -144,6 +145,24 @@ model Order {
   customerName          String
   customerPhone         String?
   status                OrderStatus     @default(PENDING)
+  paymentMethod         String?
+  paymentState          String          @default("UNPAID")
+  paymentReference      String?         @unique
+  currency              String          @default("USD")
+  paymentDestination    String?
+  paymentHandle         String?
+  paymentDueAt          DateTime?
+  paymentReviewRequestedAt DateTime?
+  paymentVerifiedAt     DateTime?
+  paymentVerifiedBy     String?
+  verifiedAmountCents   Int?
+  providerTransactionId String?         @unique
+  checkoutKeyHash       String?         @unique
+  checkoutRequestHash   String?         @unique
+  checkoutPayloadHash   String?
+  deliveryFeeCents      Int             @default(0)
+  fulfillmentLocation   String?
+  paymentEvents         PaymentEvent[]
   totalCents            Int
   fulfillmentType       FulfillmentType
   deliveryZoneId        String?
@@ -342,4 +361,20 @@ model EmailJob {
   createdAt DateTime @default(now())
   sentAt DateTime?
   @@index([status, availableAt])
+}
+
+model PaymentEvent {
+  id String @id @default(cuid())
+  orderId String
+  type String
+  actorId String?
+  amountCents Int?
+  currency String?
+  providerTransactionId String? @unique
+  receivedAt DateTime?
+  note String?
+  restock Boolean @default(false)
+  createdAt DateTime @default(now())
+  order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  @@index([orderId, createdAt])
 }

@@ -2,6 +2,8 @@
 
 import { ShoppingCart, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { shouldOpenCheckoutRecovery } from "@/lib/checkout-recovery-client";
 import type { DeliveryZone, PickupLocation } from "@prisma/client";
 import { CartSummary } from "@/components/CartSummary";
 import { CheckoutForm } from "@/components/CheckoutForm";
@@ -19,6 +21,7 @@ export function CartDrawerButton({
 }) {
   const [open, setOpen] = useState(false);
   const [itemCount, setItemCount] = useState(0);
+  const pathname = usePathname();
 
   async function loadCount() {
     const response = await fetch("/api/cart", { cache: "no-store" });
@@ -29,8 +32,13 @@ export function CartDrawerButton({
   useEffect(() => {
     loadCount();
     window.addEventListener("cart:updated", loadCount);
-    return () => window.removeEventListener("cart:updated", loadCount);
-  }, []);
+    function resumeSavedCheckout() {
+      try { if (shouldOpenCheckoutRecovery(window.sessionStorage, pathname)) setOpen(true); } catch { /* Checkout explains inaccessible storage before placing an order. */ }
+    }
+    function onPageShow() { void loadCount(); resumeSavedCheckout(); }
+    resumeSavedCheckout(); window.addEventListener("pageshow", onPageShow);
+    return () => { window.removeEventListener("cart:updated", loadCount); window.removeEventListener("pageshow", onPageShow); };
+  }, [pathname]);
 
   useEffect(() => {
     if (!open) return;
@@ -60,7 +68,7 @@ export function CartDrawerButton({
             </div>
             <div className="space-y-4 p-4">
               <CartSummary framed={false} onItemCountChange={setItemCount} />
-              {itemCount > 0 ? <CheckoutForm deliveryZones={deliveryZones} pickupLocations={pickupLocations} framed={false} /> : null}
+              <CheckoutForm deliveryZones={deliveryZones} pickupLocations={pickupLocations} framed={false} hasCartItems={itemCount > 0} />
             </div>
           </div>
         </div>

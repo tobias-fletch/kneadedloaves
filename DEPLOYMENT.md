@@ -1,12 +1,18 @@
 # Kneaded Loaves deployment
 
-The app is prepared for a Node 22 host or Docker with a separate email worker. It has not been deployed. Stripe integration is deferred and production checkout intentionally returns a maintenance response until that work is complete.
+The current site runs on Vercel with Node 24. This manual Venmo candidate is not deployed. Checkout remains disabled until the owner configures and verifies all gates in VENMO-OPERATIONS.md. A separate email/expiry runner is required before accepting orders.
+
+Production build migration handling is guarded and uses DATABASE_URL only. The existing live schema needs separately approved baseline reconciliation; do not deploy blindly, reset data, or substitute another integration URL. Preview builds never migrate.
+
+The production guard accepts a nonempty, checksum-matching contiguous prefix of the repository migrations, including a separately approved initial-only baseline. Completed records must be in migration order. It rejects empty/unbaselined history, gaps, out-of-order records, unknown or unresolved failed migrations, checksum drift, and recognizable schema effects whose migration is not recorded. Required table/column checks follow the recorded prefix: AppConfig is required after its migration, hardening fields/tables after hardening, and manual-payment fields/PaymentEvent after the final migration. These presence checks are not a complete type/index/constraint comparison.
+
+After the read-only preflight succeeds, normal Prisma migration deployment executes every remaining migration, followed by a read-only completion check before client generation and the Next.js build. The helper never inserts or resolves baseline/history records itself. An initial-only baseline therefore runs migrations 2–4 and the new manual-payment migration; do not mark those pending migrations applied without executing them.
 
 ## Required services and settings
 
 The production domain is `kneadedloaves.com`. Copy `.env.production.example` to the ignored `.env.production` on the host and supply the missing secrets and provider settings. The Docker build passes the public URL at build time, because Next.js embeds public environment variables in the browser bundle. Rebuild the image if the domain changes.
 
-The next handoff requires the hosting provider and access to domain DNS. After the host is provisioned, point the apex domain at the host's supplied target, configure HTTPS, and redirect `www.kneadedloaves.com` to `https://kneadedloaves.com`. Obtain the exact DNS records from the selected host. Deploy initially with checkout paused; payment completion remains a separate launch requirement.
+The following infrastructure checklist is generic operator guidance, not a request to change the existing host or DNS. Keep checkout paused during release; provider payment readiness is a separate launch decision.
 
 1. Provision PostgreSQL with authenticated TLS access and automated backups. Set `DATABASE_URL` in the host secret manager. Do not expose the local development cluster publicly.
 2. Set `APP_URL` and `NEXT_PUBLIC_APP_URL` to the same HTTPS domain. Configure DNS, TLS termination, upstream timeouts, a 6 MB request limit and error-log retention at your reverse proxy/host.
@@ -19,19 +25,20 @@ The next handoff requires the hosting provider and access to domain DNS. After t
 
 Run `npm ci`, `npm run prisma:generate`, `npm run lint`, `npm test`, `npm audit --audit-level=moderate`, and `npm run build` in CI. Do not run development mode publicly.
 
-Back up the database before migration. Run `npm run prisma:deploy` once per release, then `npm start` and `npm run email:worker` as separately supervised services. The worker supports `--once` for a one-pass diagnostic. It records delivery attempts in `/admin/email`; failed messages can be retried there. SMTP is at-least-once: a crash after provider acceptance can cause a duplicate. Stable message IDs help diagnosis but do not guarantee provider deduplication.
+Back up the database before migration. For a non-Vercel release, run `npm run prisma:deploy` from an approved full-install build/release environment after baseline review, then supervise the web, email and expiry services. The slim runtime contains worker bundles but no Prisma CLI or TypeScript runner. The worker supports `--once` for a one-pass diagnostic. It records delivery attempts in `/admin/email`; failed messages can be retried there. SMTP is at-least-once: a crash after provider acceptance can cause a duplicate. Stable message IDs help diagnosis but do not guarantee provider deduplication.
 
 For Docker, prepare an ignored `.env.production` with the values above, then:
 
 ```sh
 docker compose build web
-docker compose run --rm web npm run prisma:deploy
-docker compose up -d web worker
+
+# Apply approved migrations from the full-install build/release environment, not the slim web image.
+docker compose up -d web worker payment-expiry
 ```
 
 The supplied compose file binds the web port to loopback for a local reverse proxy and expects a separately provisioned database. It does not provision DNS, TLS or a hosted database. Use a release-specific `RELEASE_TAG` and retain previous images for rollback. Docker files are supplied but were not executed on this machine.
 
-Create the real admin using `ADMIN_EMAIL` and `ADMIN_PASSWORD` from a secure shell/secret manager, then `npm run admin:setup`. Remove `ADMIN_PASSWORD` after use. Existing default accounts must be removed or have passwords changed. Sample passwords are rejected at production login; sample seeding is blocked in production. Do not run the sample seed on production data.
+Create the real admin using `ADMIN_EMAIL` and `ADMIN_PASSWORD` from a secure shell/secret manager, then run `npm run admin:setup` in the approved full-install release environment. Remove `ADMIN_PASSWORD` after use. Existing default accounts must be removed or have passwords changed. Sample passwords are rejected at production login; sample seeding is blocked in production. Do not run the sample seed on production data.
 
 If importing an older database with plaintext admin-saved secrets, set the encryption key and run `npm run secrets:encrypt` before serving production traffic. The local database has already been migrated to encrypted stored secrets; preserve its existing key if moving that database.
 

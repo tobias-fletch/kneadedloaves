@@ -1,48 +1,26 @@
-import { format } from "date-fns";
+import { FulfillmentType, OrderStatus } from "@prisma/client";
 import { formatMoney } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
-
-export default async function AdminOrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; fulfillment?: string }> }) {
-  const params = await searchParams;
-  const orders = await prisma.order.findMany({
-    where: {
-      status: params.status as never,
-      fulfillmentType: params.fulfillment as never
-    },
-    include: { items: true, orderWindow: true, deliveryZone: true, pickupLocation: true },
-    orderBy: { createdAt: "desc" }
-  }).catch(() => []);
-
-  return (
-    <div className="space-y-4">
-      <div className="panel flex flex-wrap gap-2 p-4 print:hidden">
-        {["PAID", "PREPARING", "READY", "OUT_FOR_DELIVERY", "COMPLETED", "CANCELLED"].map((status) => (
-          <a className="btn-secondary" href={`/admin/orders?status=${status}`} key={status}>{status.replaceAll("_", " ")}</a>
-        ))}
-        <span className="btn-primary">Use browser print/export</span>
-      </div>
-      <div className="grid gap-4">
-        {orders.map((order) => (
-          <article className="panel p-4" key={order.id}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-black">{order.customerName}</h2>
-                <p className="text-sm text-ink/70">{order.customerEmail} · {order.customerPhone}</p>
-                <p className="text-sm font-semibold text-jam">{order.fulfillmentType} · {order.deliveryZone?.name ?? order.pickupLocation?.name}</p>
-              </div>
-              <div className="text-right">
-                <span className="badge bg-crumb text-ink">{order.status.replaceAll("_", " ")}</span>
-                <p className="mt-2 font-black">{formatMoney(order.totalCents)}</p>
-              </div>
-            </div>
-            <p className="mt-3 text-xs text-ink/60">{format(order.createdAt, "MMM d, h:mm a")} · Window: {order.orderWindow?.name ?? "None"}</p>
-            <ul className="mt-3 grid gap-1 text-sm">
-              {order.items.map((item) => <li key={item.id}>{item.quantity} x {item.productName}</li>)}
-            </ul>
-            <p className="mt-3 rounded-md bg-crumb p-3 text-sm">{order.fulfillmentInstructions ?? "No special instructions."}</p>
-          </article>
-        ))}
-      </div>
-    </div>
-  );
+import { requireAdmin } from "@/lib/auth";
+import { AdminOrderActions } from "@/components/AdminOrderActions";
+const dateTime = (date: Date) => `${new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(date)} UTC`;
+export default async function AdminOrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; fulfillment?: string; payment?: string }> }) {
+  await requireAdmin();
+  const params = await searchParams, status = Object.values(OrderStatus).find(value => value === params.status), fulfillment = Object.values(FulfillmentType).find(value => value === params.fulfillment), paymentState = params.payment === "REVIEW" ? "REVIEW" : undefined;
+  const orders = await prisma.order.findMany({ where: { status, fulfillmentType: fulfillment, paymentState }, include: { items: true, orderWindow: true, pickupLocation: true, paymentEvents: { orderBy: { createdAt: "asc" } } }, orderBy: { createdAt: "desc" } }).catch(() => null);
+  return <div className="space-y-4">
+    <div className="panel space-y-3 p-4 print:hidden"><div className="flex flex-wrap gap-2" aria-label="Filter orders by status"><a className={!status && !paymentState ? "btn-primary" : "btn-secondary"} href="/admin/orders">All orders</a>{Object.values(OrderStatus).map(value => <a className={status === value ? "btn-primary" : "btn-secondary"} href={`/admin/orders?status=${value}`} aria-current={status === value ? "page" : undefined} key={value}>{value === "PENDING" ? "Pending payment" : value.replaceAll("_", " ")}</a>)}<a className={paymentState ? "btn-primary" : "btn-secondary"} href="/admin/orders?payment=REVIEW">Payment review</a></div><p className="text-sm">Use your browser’s print or save-as-PDF option to export the displayed orders. All dates below are UTC.</p></div>
+    {orders === null ? <p role="alert" className="panel p-4 font-bold">Orders could not be loaded. Refresh this page to try again.</p> : orders.length === 0 ? <p className="panel p-4">No orders match this filter.</p> : <div className="grid gap-4">{orders.map(order => {
+      const expired = order.status === "PENDING" && order.paymentDueAt && order.paymentDueAt.getTime() <= Date.now();
+      return <article className="panel p-4 sm:p-5" key={order.id}>
+        <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0"><h2 className="text-lg font-black">{order.customerName}</h2><p className="break-all text-sm text-ink/80">{order.customerEmail}{order.customerPhone ? ` · ${order.customerPhone}` : ""}</p><p className="mt-1 whitespace-pre-line text-sm font-semibold">{order.fulfillmentType}{order.fulfillmentType === "PICKUP" ? ` · ${order.fulfillmentLocation ?? order.pickupLocation?.name ?? "Location not recorded"}` : ""}</p></div><div className="text-right"><span className="badge bg-crumb">{order.status.replaceAll("_", " ")}</span><p className="mt-2 font-black">{formatMoney(order.totalCents)} {order.currency}</p></div></div>
+        <p className="mt-3 break-all text-sm font-bold">Order reference: <span className="font-mono">{order.paymentReference ?? order.id}</span></p><p className="mt-1 break-all text-xs text-ink/70">Order ID: {order.id}</p><p className="mt-2 text-xs text-ink/70">Created {dateTime(order.createdAt)} · Window: {order.orderWindow?.name ?? "None"}</p>
+        {order.deliveryAddress ? <div className="mt-3 border-2 border-ink bg-crumb p-3"><p className="text-xs font-black uppercase tracking-widest">Delivery address</p><p className="mt-1 whitespace-pre-line text-sm">{order.deliveryAddress}</p></div> : null}
+        <ul className="mt-3 grid gap-1 text-sm">{order.items.map(item => <li key={item.id}>{item.quantity} × {item.productName} · {formatMoney(item.quantity * item.unitPriceCents)}</li>)}</ul>{order.fulfillmentType === "DELIVERY" ? <p className="mt-2 text-sm">Delivery fee: {formatMoney(order.deliveryFeeCents)}</p> : null}<p className="mt-3 whitespace-pre-line border-2 border-ink bg-crumb p-3 text-sm">{order.fulfillmentInstructions ?? "No special instructions."}</p>
+        <section className="mt-4 border-t-2 border-ink pt-4" aria-label="Payment details"><div className="flex flex-wrap gap-2"><span className="badge bg-page">{order.paymentMethod ?? "Legacy payment"}</span><span className="badge bg-crumb">{order.paymentState.replaceAll("_", " ")}</span>{expired ? <span className="badge bg-jam">Deadline passed</span> : null}</div><dl className="mt-3 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="font-black">Payment deadline</dt><dd>{order.paymentDueAt ? dateTime(order.paymentDueAt) : "Not recorded"}</dd></div><div><dt className="font-black">Customer requested a check</dt><dd>{order.paymentReviewRequestedAt ? dateTime(order.paymentReviewRequestedAt) : "No request"}</dd></div><div className="sm:col-span-2"><dt className="font-black">Saved payment recipient</dt><dd className="break-all">{order.paymentHandle ?? "Not recorded"}{order.paymentDestination ? <span className="mt-1 block">{order.paymentDestination}</span> : null}</dd></div>{order.paymentVerifiedAt ? <div className="sm:col-span-2"><dt className="font-black">Payment verification</dt><dd className="break-all">{order.verifiedAmountCents !== null ? `${formatMoney(order.verifiedAmountCents)} ${order.currency} · ` : ""}{dateTime(order.paymentVerifiedAt)} · Verified by {order.paymentVerifiedBy ?? "Unknown admin"}{order.providerTransactionId ? <span className="mt-1 block">Transaction: {order.providerTransactionId}</span> : null}</dd></div> : null}</dl>{expired || order.status === "CANCELLED" ? <p className="mt-3 font-bold">Do not fulfill or revive this order from a late payment. Record the evidence for review and resolve it in Venmo.</p> : null}</section>
+        <AdminOrderActions key={`${order.id}:${order.updatedAt.toISOString()}`} orderId={order.id} status={order.status} paymentMethod={order.paymentMethod} paymentState={order.paymentState} totalCents={order.totalCents} currency={order.currency} reference={order.paymentReference} dueAt={order.paymentDueAt?.toISOString() ?? null} fulfillmentType={order.fulfillmentType} hasPaymentEvidence={order.paymentEvents.some(event => ["VERIFIED", "REVIEW"].includes(event.type) && event.amountCents !== null && Boolean(event.providerTransactionId))} hasPaymentDiscrepancy={order.paymentEvents.some(event => ["REVIEW", "REFUND"].includes(event.type))} inventoryRestored={order.inventoryRestored} />
+        <details className="mt-5 border-t-2 border-ink pt-4"><summary className="cursor-pointer font-black uppercase tracking-wide">Payment and order history ({order.paymentEvents.length})</summary>{order.paymentEvents.length ? <ol className="mt-3 space-y-3">{order.paymentEvents.map(event => <li key={event.id} className="border-2 border-ink bg-crumb p-3 text-sm"><p className="font-black">{event.type.replaceAll("_", " ")} · {dateTime(event.createdAt)}</p><p className="mt-1 break-all">Recorded by: {event.actorId ?? "Customer or system"}</p>{event.amountCents !== null ? <p className="mt-1 font-bold">{(event.amountCents / 100).toFixed(2)} {event.currency ?? order.currency}</p> : null}{event.providerTransactionId ? <p className="mt-1 break-all">Transaction: {event.providerTransactionId}</p> : null}{event.receivedAt ? <p className="mt-1">Transaction date: {dateTime(event.receivedAt)}</p> : null}{event.note ? <p className="mt-1 whitespace-pre-line">{event.note}</p> : null}{event.restock ? <p className="mt-1 font-bold">Restock was requested with this record; items are returned at most once.</p> : null}</li>)}</ol> : <p className="mt-3 text-sm">No payment or status events recorded.</p>}</details>
+      </article>;
+    })}</div>}
+  </div>;
 }

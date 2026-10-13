@@ -1,3 +1,4 @@
+import { publicRedirectUrl } from "@/lib/public-origin";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -22,7 +23,7 @@ export async function POST(request: Request) {
   });
   await createAutomatedDraft({ title: event.title, trigger: "Pop-up event", popupEventId: event.id });
   if (!contentType.includes("application/json")) {
-    return NextResponse.redirect(new URL("/admin/events", request.url), { status: 303 });
+    return NextResponse.redirect(publicRedirectUrl(request, "/admin/events"), { status: 303 });
   }
   return NextResponse.json(event);
 }

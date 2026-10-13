@@ -65,7 +65,8 @@ export function CartSummary({ framed = true, onItemCountChange }: { framed?: boo
   useEffect(() => {
     loadCart();
     window.addEventListener("cart:updated", loadCart);
-    return () => window.removeEventListener("cart:updated", loadCart);
+    window.addEventListener("pageshow", loadCart);
+    return () => { window.removeEventListener("cart:updated", loadCart); window.removeEventListener("pageshow", loadCart); };
   }, []);
 
   const items = useMemo(() => cart?.items ?? [], [cart]);

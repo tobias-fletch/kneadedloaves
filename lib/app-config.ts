@@ -1,7 +1,14 @@
+import type { Prisma } from "@prisma/client";
 import { decryptSecret } from "@/lib/secrets";
 import { prisma } from "@/lib/prisma";
 
 export const setupConfigFields = [
+  { key: "VENMO_CHECKOUT_ENABLED", label: "Enable manual Venmo checkout", group: "Manual Venmo", secret: false, input: "checkbox", optional: true },
+  { key: "VENMO_HANDLE", label: "Venmo business handle", group: "Manual Venmo", secret: false, optional: true },
+  { key: "VENMO_DESTINATION", label: "Copied Venmo receiving link", group: "Manual Venmo", secret: false, optional: true },
+  { key: "VENMO_DESTINATION_VERIFIED", label: "Owner checked receiving destination", group: "Manual Venmo", secret: false, input: "checkbox", optional: true },
+  { key: "PAYMENT_HOLD_MINUTES", label: "Owner-selected payment hold (minutes)", group: "Manual Venmo", secret: false, optional: true },
+  { key: "PAYMENT_WORKERS_READY", label: "Deployed email and expiry workers tested", group: "Manual Venmo", secret: false, input: "checkbox", optional: true },
   { key: "APP_URL", label: "Public shop URL", group: "Launch", secret: false },
   { key: "JWT_SECRET", label: "Session secret", group: "Launch", secret: true },
   { key: "CHECKOUT_SMOKE_TESTED", label: "Customer checkout smoke tested", group: "Launch", secret: false, input: "checkbox", optional: true },
@@ -39,11 +46,11 @@ export async function getAppConfigValue(key: SetupConfigKey) {
   return saved?.value ? (saved.secret ? decryptSecret(saved.value) : saved.value).trim() : "";
 }
 
-export async function getAppConfigValues(keys: SetupConfigKey[]) {
-  const saved = await prisma.appConfig.findMany({ where: { key: { in: keys } } }).catch(() => []);
+export async function getAppConfigValues(keys: (SetupConfigKey | "VENMO_VERIFIED_FINGERPRINT")[], db: Pick<Prisma.TransactionClient, "appConfig"> = prisma) {
+  const saved = await db.appConfig.findMany({ where: { key: { in: keys } } });
   const savedByKey = new Map(saved.map((item) => [item.key, item.secret && !process.env[item.key]?.trim() ? decryptSecret(item.value) : item.value]));
   return Object.fromEntries(keys.map((key) => [key, process.env[key]?.trim() || savedByKey.get(key)?.trim() || ""])) as Record<
-    SetupConfigKey,
+    SetupConfigKey | "VENMO_VERIFIED_FINGERPRINT",
     string
   >;
 }

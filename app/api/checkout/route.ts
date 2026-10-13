@@ -1,157 +1,92 @@
-import { prepareOrderEmail, getOrderEmailTemplates } from "@/lib/email";
-import { createHash, randomBytes } from "crypto";
-import { cartOwner, acceptsOrders } from "@/lib/order-rules";
-import { readJson, rateLimit } from "@/lib/request";
-import { queueEmail } from "@/lib/email-queue";
+import { randomUUID } from "crypto";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getCurrentOrderWindow } from "@/lib/order-window";
 import { prisma } from "@/lib/prisma";
-import { getStripe } from "@/lib/stripe";
 import { orderSchema } from "@/lib/validation";
-import { getAppConfigValue } from "@/lib/app-config";
-
-const CART_COOKIE = "bakery_cart";
-
+import { cartOwner, acceptsOrders } from "@/lib/order-rules";
+import { readJson, rateLimit } from "@/lib/request";
+import { queueEmail } from "@/lib/email-queue";
+import { getManualPaymentConfig } from "@/lib/manual-payment-config";
+import { expireUnpaidOrders } from "@/lib/manual-payments";
+import { formatMoney } from "@/lib/money";
+import { checkoutDigest as digest, checkoutOwnerHash, checkoutOwners, checkoutRequestHash, lockCheckoutRequest, receiptForOwnedAttempt, validCheckoutKey } from "@/lib/checkout-recovery";
 export async function POST(request: Request) {
-  if (process.env.NODE_ENV === "production") return NextResponse.json({ error: "Online checkout is not available yet. Please contact the bakery." }, { status: 503 });
   if (!await rateLimit(request, "checkout", 20)) return NextResponse.json({ error: "Please wait before trying checkout again." }, { status: 429 });
   const parsed = orderSchema.safeParse(await readJson(request));
   if (!parsed.success) return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "Invalid order." }, { status: 400 });
-  const { openWindow } = await getCurrentOrderWindow();
-  if (!openWindow) return NextResponse.json({ error: "Ordering is currently closed." }, { status: 400 });
-
-  const session = await getSession();
-  const sessionId = (await cookies()).get(CART_COOKIE)?.value;
-  const owner = cartOwner(session?.sub, sessionId);
-  if (!owner) return NextResponse.json({ error: "Your cart is empty." }, { status: 400 });
-  const cart = await prisma.cart.findUnique({ where: owner });
-  if (!cart) return NextResponse.json({ error: "Your cart is empty." }, { status: 400 });
-
-  const deliveryZone = parsed.data.deliveryZoneId ? await prisma.deliveryZone.findUnique({ where: { id: parsed.data.deliveryZoneId } }) : null;
-  const pickupLocation = parsed.data.pickupLocationId ? await prisma.pickupLocation.findUnique({ where: { id: parsed.data.pickupLocationId } }) : null;
-  if (parsed.data.fulfillmentType === "DELIVERY" && !deliveryZone?.active) {
-    return NextResponse.json({ error: "Choose an active delivery zone." }, { status: 400 });
-  }
-  if (parsed.data.fulfillmentType === "PICKUP" && !pickupLocation?.active) {
-    return NextResponse.json({ error: "Choose an active pickup location." }, { status: 400 });
-  }
-  if (parsed.data.fulfillmentType === "DELIVERY" && !deliveryZone?.zipCodes.includes(parsed.data.deliveryZip || "")) return NextResponse.json({ error: "We do not deliver to that ZIP code in this zone." }, { status: 400 });
-  const receiptToken = randomBytes(32).toString("hex");
-  let stripe;
+  const key = request.headers.get("Idempotency-Key") || "";
+  if (!validCheckoutKey(key)) return NextResponse.json({ error: "A fresh checkout request ID is required. Reload checkout." }, { status: 400 });
   try {
-    stripe = await getStripe();
-  } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Stripe is not configured correctly." }, { status: 400 });
-  }
-
-  const emailTemplates = await getOrderEmailTemplates();
-  let order;
-  let totalCents = 0;
-  let deliveryFee = 0;
-  try {
-    order = await prisma.$transaction(async (tx) => {
+    const config = await getManualPaymentConfig();
+    if (!config.ready) return NextResponse.json({ error: "Online checkout is not available yet. Please contact the bakery." }, { status: 503 });
+    const session = await getSession(true);
+    const sessionId = (await cookies()).get("bakery_cart")?.value;
+    const owner = cartOwner(session?.sub, sessionId);
+    if (!owner) return NextResponse.json({ error: "Your cart is empty." }, { status: 400 });
+    const owners = checkoutOwners(session?.sub, sessionId);
+    const checkoutKeyHash = checkoutOwnerHash(owner, key);
+    const requestHash = checkoutRequestHash(key);
+    const checkoutPayloadHash = digest(JSON.stringify(parsed.data));
+    // Clear overdue reservations before testing window capacity, including when full.
+    await expireUnpaidOrders();
+    const result = await prisma.$transaction(async tx => {
+      await lockCheckoutRequest(tx, key);
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock_shared(hashtext(${'manual-payment-config'}))`;
+      const freshConfig = await getManualPaymentConfig(tx);
+      if (!freshConfig.ready || freshConfig.JWT_SECRET !== config.JWT_SECRET || freshConfig.VENMO_DESTINATION !== config.VENMO_DESTINATION || freshConfig.VENMO_HANDLE !== config.VENMO_HANDLE || freshConfig.PAYMENT_HOLD_MINUTES !== config.PAYMENT_HOLD_MINUTES) throw new Error("Payment settings changed. Review checkout and retry before sending money.");
+      const retry = await tx.order.findUnique({ where: { checkoutRequestHash: requestHash } });
+      if (retry) {
+        if (retry.checkoutPayloadHash !== checkoutPayloadHash) throw new Error("That checkout request ID was already used with different details. Recover the existing reservation before starting another.");
+        return receiptForOwnedAttempt(tx, retry, key, owners, config.JWT_SECRET);
+      }
+      const cart = await tx.cart.findUnique({ where: owner });
+      if (!cart) throw new Error("Your cart is empty.");
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${cart.id}))`;
+      const { openWindow } = await getCurrentOrderWindow(tx);
+      if (!openWindow) throw new Error("Ordering is currently closed or full.");
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`window:${openWindow.id}`}))`;
-      const freshWindow = await tx.orderWindow.findUniqueOrThrow({ where: { id: openWindow.id } });
-      const orderCount = await tx.order.count({ where: { orderWindowId: openWindow.id, status: { not: "CANCELLED" } } });
-      if (!acceptsOrders(freshWindow, orderCount)) throw new Error("This order window is closed or full.");
-      const lockedCart = await tx.cart.findUnique({
-        where: { id: cart.id },
-        include: { items: { include: { product: true } } }
-      });
-      if (!lockedCart?.items.length) {
-        throw new Error("Your cart is empty.");
-      }
-
       const now = new Date();
-      const unavailable = lockedCart.items.find((item) => !item.product.active || item.product.soldOut || item.product.inventoryLimit < item.quantity || (item.product.availableFrom && item.product.availableFrom > now) || (item.product.availableTo && item.product.availableTo < now));
-      if (unavailable) {
-        throw new Error(`${unavailable.product.name} is no longer available in that quantity.`);
+      const freshWindow = await tx.orderWindow.findUniqueOrThrow({ where: { id: openWindow.id } });
+      const count = await tx.order.count({ where: { orderWindowId: openWindow.id, status: { not: "CANCELLED" } } });
+      if (!acceptsOrders(freshWindow, count, now)) throw new Error("This order window is closed or full.");
+      const lockedCart = await tx.cart.findUnique({ where: { id: cart.id }, include: { items: { include: { product: true } } } });
+      if (!lockedCart?.items.length) throw new Error("Your cart is empty.");
+      const zone = parsed.data.fulfillmentType === "DELIVERY" && parsed.data.deliveryZoneId ? await tx.deliveryZone.findUnique({ where: { id: parsed.data.deliveryZoneId } }) : null;
+      const pickup = parsed.data.fulfillmentType === "PICKUP" && parsed.data.pickupLocationId ? await tx.pickupLocation.findUnique({ where: { id: parsed.data.pickupLocationId } }) : null;
+      if (parsed.data.fulfillmentType === "DELIVERY" && (!zone?.active || !zone.zipCodes.includes(parsed.data.deliveryZip || ""))) throw new Error("Choose an active delivery zone covering your ZIP code.");
+      if (parsed.data.fulfillmentType === "PICKUP" && !pickup?.active) throw new Error("Choose an active pickup location.");
+      const deliveryFeeCents = zone?.feeCents || 0;
+      const totalCents = lockedCart.items.reduce((sum,item) => sum + item.product.priceCents * item.quantity, deliveryFeeCents);
+      if (!Number.isSafeInteger(totalCents) || totalCents <= 0 || totalCents > 100000000 || deliveryFeeCents < 0) throw new Error("Invalid order pricing. Please contact the bakery.");
+      for (const item of [...lockedCart.items].sort((a,b) => a.productId.localeCompare(b.productId))) {
+        if (!Number.isInteger(item.quantity) || item.quantity <= 0 || item.quantity > 1000 || item.product.priceCents <= 0) throw new Error("Invalid cart quantity or price.");
+        const updated = await tx.product.updateMany({ where: { id: item.productId, active: true, soldOut: false, inventoryLimit: { gte: item.quantity }, AND: [{ OR: [{ availableFrom: null }, { availableFrom: { lte: now } }] }, { OR: [{ availableTo: null }, { availableTo: { gte: now } }] }] }, data: { inventoryLimit: { decrement: item.quantity } } });
+        if (updated.count !== 1) throw new Error(`${item.product.name} is no longer available in that quantity.`);
+        // soldOut is owner-controlled; inventoryLimit independently represents reserved stock.
       }
-
-      const itemsTotal = lockedCart.items.reduce((sum, item) => sum + item.product.priceCents * item.quantity, 0);
-      deliveryFee = parsed.data.fulfillmentType === "DELIVERY" ? deliveryZone?.feeCents ?? 0 : 0;
-      totalCents = itemsTotal + deliveryFee;
-
-      const created = await tx.order.create({
-        data: {
-          userId: session?.sub,
-          receiptTokenHash: createHash("sha256").update(receiptToken).digest("hex"),
-          customerEmail: parsed.data.customerEmail,
-          customerName: parsed.data.customerName,
-          customerPhone: parsed.data.customerPhone,
-          fulfillmentType: parsed.data.fulfillmentType,
-          deliveryZoneId: parsed.data.fulfillmentType === "DELIVERY" ? deliveryZone?.id : undefined,
-          pickupLocationId: parsed.data.fulfillmentType === "PICKUP" ? pickupLocation?.id : undefined,
-          deliveryAddress: parsed.data.fulfillmentType === "DELIVERY" ? `${parsed.data.deliveryAddress}\n${parsed.data.deliveryZip}` : undefined,
-          fulfillmentInstructions: parsed.data.fulfillmentType === "DELIVERY" ? deliveryZone?.instructions : pickupLocation?.instructions,
-          totalCents,
-          orderWindowId: openWindow.id,
-          items: {
-            create: lockedCart.items.map((item) => ({
-              productId: item.productId,
-              quantity: item.quantity,
-              unitPriceCents: item.product.priceCents,
-              productName: item.product.name
-            }))
-          }
-        }
-      });
-
-      for (const item of [...lockedCart.items].sort((a, b) => a.productId.localeCompare(b.productId))) {
-        const updated = await tx.product.updateMany({
-          where: { id: item.productId, active: true, soldOut: false, inventoryLimit: { gte: item.quantity }, AND: [{ OR: [{ availableFrom: null }, { availableFrom: { lte: now } }] }, { OR: [{ availableTo: null }, { availableTo: { gte: now } }] }] },
-          data: { inventoryLimit: { decrement: item.quantity } }
-        });
-        if (updated.count !== 1) {
-          throw new Error(`${item.product.name} is no longer available in that quantity.`);
-        }
-        await tx.product.updateMany({ where: { id: item.productId, inventoryLimit: { lte: 0 } }, data: { soldOut: true } });
-      }
+      const paymentReference = `KL-${randomUUID().toUpperCase()}`;
+      const paymentDueAt = new Date(Math.min(now.getTime() + config.holdMinutes * 60000, freshWindow.manualOpen ? Infinity : freshWindow.closesAt.getTime()));
+      const fulfillmentLocation = zone ? `${parsed.data.deliveryAddress}\n${parsed.data.deliveryZip}` : `${pickup!.name}\n${pickup!.address}`;
+      const created = await tx.order.create({ data: {
+        userId: session?.sub, checkoutRequestHash: requestHash, checkoutKeyHash, checkoutPayloadHash,
+        customerEmail: parsed.data.customerEmail, customerName: parsed.data.customerName, customerPhone: parsed.data.customerPhone,
+        fulfillmentType: parsed.data.fulfillmentType, deliveryZoneId: zone?.id, pickupLocationId: pickup?.id,
+        deliveryAddress: zone ? fulfillmentLocation : undefined, fulfillmentLocation,
+        fulfillmentInstructions: zone?.instructions || pickup?.instructions,
+        totalCents, deliveryFeeCents, orderWindowId: openWindow.id,
+        paymentMethod: "VENMO", paymentReference, currency: "USD", paymentDestination: config.VENMO_DESTINATION, paymentHandle: config.VENMO_HANDLE, paymentDueAt,
+        items: { create: lockedCart.items.map(item => ({ productId: item.productId, quantity: item.quantity, unitPriceCents: item.product.priceCents, productName: item.product.name })) }
+      } });
       await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
-
-      const email = prepareOrderEmail({ to: created.customerEmail, orderId: created.id, customerName: created.customerName, totalCents, fulfillmentType: created.fulfillmentType, fulfillmentInstructions: created.fulfillmentInstructions, items: lockedCart.items.map(item => ({ productName: item.product.name, quantity: item.quantity, unitPriceCents: item.product.priceCents })) }, emailTemplates);
-      await queueEmail({ dedupeKey: "order-received:" + created.id, ...email }, tx);
+      await queueEmail({ dedupeKey: `order-received:${created.id}`, to: created.customerEmail, subject: "Bakery reservation received — awaiting payment", body: `Hi ${created.customerName},\n\nYour reservation ${paymentReference} is awaiting payment. It is not paid or scheduled for fulfillment yet.\n\n${lockedCart.items.map(item => `${item.quantity} x ${item.product.name}: ${formatMoney(item.product.priceCents * item.quantity)}`).join("\n")}\nDelivery fee: ${formatMoney(deliveryFeeCents)}\nExact total: ${formatMoney(totalCents)} USD\n\nPay ${config.VENMO_HANDLE} using the verified business destination: ${config.VENMO_DESTINATION}\nUse only reference ${paymentReference} in the payment note; do not include your address or other private details.\nPayment must be independently verified by ${paymentDueAt.toISOString()}. If already paid, request review from your private receipt.\nKeep the private receipt link shown after checkout. Signed-in customers can also find orders in their account.\n\n${fulfillmentLocation}\n${created.fulfillmentInstructions || ""}\nExpired reservations are not automatically restored by a late payment. Contact the bakery if you have paid after expiry.` }, tx);
       const settings = await tx.adminSettings.findFirst();
-      if (settings?.emailNotificationsEnabled && settings.notificationEmail) await queueEmail({ dedupeKey: "admin-order:" + created.id, to: settings.notificationEmail, subject: "New bakery order", body: "Order " + created.id + " received. Payment has not been confirmed. Check the admin dashboard." }, tx);
-      return tx.order.findUniqueOrThrow({ where: { id: created.id }, include: { items: true } });
+      if (settings?.emailNotificationsEnabled && settings.notificationEmail) await queueEmail({ dedupeKey: `admin-order:${created.id}`, to: settings.notificationEmail, subject: "New bakery reservation awaiting payment", body: `Reservation ${paymentReference} received. Payment is unverified. Check admin orders before the ${paymentDueAt.toISOString()} reservation deadline.` }, tx);
+      return receiptForOwnedAttempt(tx, created, key, owners, config.JWT_SECRET);
     });
+    return NextResponse.json({ message: "Reservation received. Payment has not been confirmed.", ...result }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not place order." }, { status: 400 });
+    return NextResponse.json({ error: error instanceof Error && !/prisma|database|constraint|connection/i.test(error.message) ? error.message : "Checkout could not be completed. Please retry with the same details." }, { status: 400 });
   }
-
-  if (!stripe) {
-    return NextResponse.json({
-      message: "Your order was received. Payment has not been confirmed.",
-      url: `/orders/${order.id}?token=${receiptToken}`,
-      orderId: order.id
-    });
-  }
-
-  const appUrl = (await getAppConfigValue("APP_URL")) || process.env.NEXT_PUBLIC_APP_URL || new URL(request.url).origin;
-  const checkout = await stripe.checkout.sessions.create({
-    mode: "payment",
-    customer_email: order.customerEmail,
-    success_url: `${appUrl}/account?checkout=success`,
-    cancel_url: `${appUrl}/shop?checkout=cancelled`,
-    metadata: { orderId: order.id },
-    line_items: [
-      ...order.items.map((item) => ({
-        quantity: item.quantity,
-        price_data: {
-          currency: "usd",
-          unit_amount: item.unitPriceCents,
-          product_data: { name: item.productName }
-        }
-      })),
-      ...(deliveryFee > 0
-        ? [{ quantity: 1, price_data: { currency: "usd", unit_amount: deliveryFee, product_data: { name: "Delivery fee" } } }]
-        : [])
-    ]
-  });
-
-  await prisma.order.update({ where: { id: order.id }, data: { stripeCheckoutSessionId: checkout.id } });
-  return NextResponse.json({ url: checkout.url });
 }

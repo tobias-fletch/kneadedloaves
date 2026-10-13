@@ -1,20 +1,17 @@
 import { OrderStatus, Prisma } from "@prisma/client";
-
+import { lockOrder, restoreInventory } from "@/lib/manual-payments";
 const transitions: Record<OrderStatus, OrderStatus[]> = {
   PENDING: ["CANCELLED"], PAID: ["PREPARING"], PREPARING: ["READY"],
   READY: ["OUT_FOR_DELIVERY", "COMPLETED"], OUT_FOR_DELIVERY: ["COMPLETED"], COMPLETED: [], CANCELLED: []
 };
-export async function changeOrderStatus(tx: Prisma.TransactionClient, id: string, status: OrderStatus) {
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`order:${id}`}))`;
-  const order = await tx.order.findUniqueOrThrow({ where: { id }, include: { items: true } });
+export async function changeOrderStatus(tx: Prisma.TransactionClient, id: string, status: OrderStatus, actorId?: string) {
+  const order = await lockOrder(tx, id);
   if (order.status === status) return order;
-  if (!transitions[order.status].includes(status)) throw new Error("That order status change is not allowed. Payments and refunds must be verified by the payment integration.");
+  if (!transitions[order.status].includes(status)) throw new Error("That status change is not allowed. Verify payments or record external refunds through reconciliation.");
+  if (status !== "CANCELLED" && (order.paymentState !== "VERIFIED" || !order.paymentVerifiedAt || order.verifiedAmountCents !== order.totalCents)) throw new Error("Fulfillment requires independently verified full payment.");
   if (status === "OUT_FOR_DELIVERY" && order.fulfillmentType !== "DELIVERY") throw new Error("Pickup orders cannot be out for delivery.");
-  if (status === "CANCELLED" && order.stripeCheckoutSessionId) throw new Error("Cancel the payment session through the payment integration first.");
-  if (status === "CANCELLED" && !order.inventoryRestored) {
-    for (const item of [...order.items].sort((a, b) => (a.productId || "").localeCompare(b.productId || ""))) {
-      if (item.productId) await tx.product.update({ where: { id: item.productId }, data: { inventoryLimit: { increment: item.quantity }, soldOut: false } });
-    }
-  }
-  return tx.order.update({ where: { id }, data: { status, ...(status === "CANCELLED" ? { inventoryRestored: true } : {}) } });
+  if (status === "CANCELLED" && order.stripeCheckoutSessionId) throw new Error("Cancel the payment session through its payment provider first.");
+  if (status === "CANCELLED") await restoreInventory(tx, order);
+  await tx.paymentEvent.create({ data: { orderId: id, type: status === "CANCELLED" ? "CANCELLED" : "STATUS_CHANGED", actorId, note: `${order.status} → ${status}` } });
+  return tx.order.update({ where: { id }, data: { status } });
 }

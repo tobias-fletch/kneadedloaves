@@ -14,7 +14,25 @@ services:
   worker:
     image: kneaded-loaves:${RELEASE_TAG:-local}
     env_file: .env.production
-    command: ["npm", "run", "email:worker"]
+    command: ["npm", "run", "email:worker:production"]
+    init: true
+    restart: unless-stopped
+    healthcheck:
+      disable: true
+  payment-expiry:
+    image: kneaded-loaves:${RELEASE_TAG:-local}
+    env_file: .env.production
+    command:
+      - sh
+      - -c
+      - |
+        trap 'exit 0' TERM INT
+        while :; do
+          node dist-workers/payment-expiry.js || exit "$$?"
+          sleep 60 &
+          wait "$$!"
+        done
+    init: true
     restart: unless-stopped
     healthcheck:
       disable: true

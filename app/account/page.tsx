@@ -35,7 +35,7 @@ export default async function AccountPage() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <p className="font-black uppercase tracking-wide">{format(order.createdAt, "MMM d, yyyy h:mm a")}</p>
-              <p className="text-xs font-semibold text-ink/60">Order #{order.id.slice(-6).toUpperCase()}</p>
+              <p className="break-all text-xs font-semibold text-ink/70">Order {order.paymentReference ?? order.id}</p>
             </div>
             <span className="badge bg-crumb text-ink">{order.status.replaceAll("_", " ")}</span>
           </div>
@@ -43,6 +43,7 @@ export default async function AccountPage() {
           <ul className="mt-3 space-y-1 text-sm">
             {order.items.map((item) => <li key={item.id}>{item.quantity} x {item.productName}</li>)}
           </ul>
+          <Link className="btn-secondary mt-4" href={`/orders/${order.id}`}>View order and payment details</Link>
         </div>
       )) : <div className="panel p-4 text-ink/70">No orders yet.</div>}
     </main>

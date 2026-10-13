@@ -6,7 +6,12 @@ async function main() {
   const password = process.env.ADMIN_PASSWORD || "";
   if (!email || !email.includes("@") || password.length < 12 || Buffer.byteLength(password) > 72) throw new Error("Set ADMIN_EMAIL and a unique ADMIN_PASSWORD of 12–72 UTF-8 bytes.");
   const passwordHash = await bcrypt.hash(password, 12);
-  await prisma.user.upsert({ where: { email }, update: { passwordHash, role: "ADMIN" }, create: { email, passwordHash, role: "ADMIN", name: "Bakery Admin" } });
+  await prisma.$transaction(async tx => {
+    const existing = await tx.user.findUnique({ where: { email } });
+    if (existing) await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`password:${existing.id}`}))`;
+    const user = await tx.user.upsert({ where: { email }, update: { passwordHash, role: "ADMIN", sessionVersion: { increment: 1 } }, create: { email, passwordHash, role: "ADMIN", name: "Bakery Admin" } });
+    await tx.passwordReset.deleteMany({ where: { userId: user.id } });
+  });
   console.log("Admin account saved. Remove ADMIN_PASSWORD from the environment after use.");
 }
 main().catch(() => { console.error("Admin setup failed. Check ADMIN_EMAIL, ADMIN_PASSWORD and database configuration."); process.exitCode = 1; }).finally(() => prisma.$disconnect());

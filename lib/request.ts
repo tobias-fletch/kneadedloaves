@@ -31,7 +31,7 @@ export async function rateLimit(request: Request, scope: string, limit = 30, ide
     });
     return result.count <= limit;
   } catch {
-    // If rate-limit table is unavailable, fail open rather than 500
-    return true;
+    // Never permit unlimited authentication or mutations during a storage outage.
+    return false;
   }
 }

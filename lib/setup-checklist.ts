@@ -1,4 +1,5 @@
-import { getAppConfigValue, getAppConfigValues } from "@/lib/app-config";
+import { getAppConfigValues } from "@/lib/app-config";
+import { getManualPaymentConfig } from "@/lib/manual-payment-config";
 import { prisma } from "@/lib/prisma";
 
 type SetupItem = {
@@ -10,8 +11,11 @@ type SetupItem = {
   group: "Storefront" | "Payments" | "Fulfillment" | "Notifications" | "Social" | "Launch";
 };
 
-function isLocalUrl(value?: string) {
-  return !value || value.includes("localhost") || value.includes("127.0.0.1");
+function isPublicShopUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password && url.pathname === "/" && !url.search && !url.hash && !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  } catch { return false; }
 }
 
 export async function getSetupChecklist() {
@@ -54,20 +58,13 @@ export async function getSetupChecklist() {
   ]);
 
   const config = await getAppConfigValues([
-    "STRIPE_SECRET_KEY",
-    "STRIPE_WEBHOOK_SECRET",
     "EMAIL_FROM",
     "SMTP_HOST",
     "SMTP_PORT",
     "SMTP_USER",
     "SMTP_PASSWORD",
-    "EMAIL_PICKUP_SUBJECT",
-    "EMAIL_PICKUP_BODY",
-    "EMAIL_DELIVERY_SUBJECT",
-    "EMAIL_DELIVERY_BODY",
     "APP_URL",
     "CHECKOUT_SMOKE_TESTED",
-    "STRIPE_TEST_MODE",
     "INSTAGRAM_GRAPH_TOKEN",
     "FACEBOOK_PAGE_TOKEN",
     "TIKTOK_CLIENT_KEY",
@@ -75,13 +72,9 @@ export async function getSetupChecklist() {
     "YOUTUBE_CLIENT_ID",
     "YOUTUBE_CLIENT_SECRET"
   ]);
-  const stripeReady = Boolean(config.STRIPE_SECRET_KEY);
-  
-  const emailReady = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM"].every((key) => Boolean(config[key as keyof typeof config]));
-  const emailTemplatesReady = ["EMAIL_PICKUP_SUBJECT", "EMAIL_PICKUP_BODY", "EMAIL_DELIVERY_SUBJECT", "EMAIL_DELIVERY_BODY"].every((key) =>
-    Boolean(config[key as keyof typeof config])
-  );
-  const appUrl = config.APP_URL || process.env.NEXT_PUBLIC_APP_URL;
+  const payment = await getManualPaymentConfig();
+  const emailReady = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM"].every((key) => Boolean(config[key as keyof typeof config])) && [465, 587, 2525].includes(Number(config.SMTP_PORT));
+  const appUrl = config.APP_URL;
   const socialCredentialGroups = [
     ["INSTAGRAM_GRAPH_TOKEN"],
     ["FACEBOOK_PAGE_TOKEN"],
@@ -89,7 +82,7 @@ export async function getSetupChecklist() {
     ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET"]
   ];
   const connectedSocialApis = socialCredentialGroups.filter((group) => group.every((key) => Boolean(config[key as keyof typeof config]))).length;
-  const jwtSecret = await getAppConfigValue("JWT_SECRET");
+  const jwtSecret = payment.JWT_SECRET;
 
   const items: SetupItem[] = [
     {
@@ -117,34 +110,28 @@ export async function getSetupChecklist() {
       complete: activeWindows > 0 || futureWindows > 0
     },
     {
-      id: "stripe-secret",
+      id: "manual-venmo-readiness",
       group: "Payments",
-      title: "Add Stripe secret key",
-      detail: "Add STRIPE_SECRET_KEY in the Setup tab so checkout redirects customers to Stripe.",
+      title: "Complete manual Venmo checkout readiness",
+      detail: payment.ready
+        ? "All required configuration checks pass. Independently verify each completed payment in the bakery's Venmo business account before fulfillment."
+        : payment.reasons.join(" "),
       href: "/admin/setup",
-      complete: stripeReady
-    },
-    {
-      id: "stripe-webhook",
-      group: "Payments",
-      title: "Add Stripe webhook secret",
-      detail: "Add STRIPE_WEBHOOK_SECRET in the Setup tab and add the checkout-completed webhook before accepting live payments.",
-      href: "/admin/setup",
-      complete: false // Stripe integration is explicitly deferred; credentials alone are not readiness.
+      complete: payment.ready
     },
     {
       id: "public-url",
       group: "Payments",
       title: "Set the public app URL",
-      detail: "Add your deployed shop URL in the Setup tab so Stripe success and cancel redirects work outside localhost.",
+      detail: "Set the canonical HTTPS shop URL for private receipts and customer links. Local development URLs are not launch-ready.",
       href: "/admin/setup",
-      complete: !isLocalUrl(appUrl)
+      complete: isPublicShopUrl(appUrl)
     },
     {
       id: "checkout-smoke-test",
       group: "Payments",
       title: "Smoke-test cart and checkout",
-      detail: "Add an item, adjust the cart, place a test order, and confirm the order appears in admin.",
+      detail: "Test guest checkout and reload recovery, independent exact-payment verification, mismatches, expiry, refunds, and queued email delivery before confirming this check in Setup.",
       href: "/admin/setup",
       complete: config.CHECKOUT_SMOKE_TESTED === "true"
     },
@@ -167,7 +154,7 @@ export async function getSetupChecklist() {
       id: "email-provider",
       group: "Notifications",
       title: "Connect email notifications",
-      detail: "Add SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, and EMAIL_FROM in the Setup tab.",
+      detail: "Configure authenticated TLS email in Setup. Saved credentials alone do not prove that queued messages were delivered.",
       href: "/admin/setup",
       complete: emailReady
     },
@@ -179,12 +166,12 @@ export async function getSetupChecklist() {
       complete: Boolean(settings?.notificationEmail)
     },
     {
-      id: "email-templates",
+      id: "lifecycle-email-test",
       group: "Notifications",
-      title: "Review customer email templates",
-      detail: "Customize pickup and delivery confirmation emails before launch.",
+      title: "Test manual-payment lifecycle emails",
+      detail: "Test queued reservation, payment-verified, and expiry messages with the deployed email worker. Legacy pickup and delivery templates are not used by manual Venmo checkout.",
       href: "/admin/email",
-      complete: emailTemplatesReady
+      complete: emailReady && payment.PAYMENT_WORKERS_READY === "true"
     },
     {
       id: "social-handles",
