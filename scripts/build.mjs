@@ -165,7 +165,12 @@ export function runBuild({ root = process.cwd(), env = process.env, run = spawnS
       throw new Error(reason ? reason[1] : `${label} failed. Check connectivity, database permissions, migration history, and the build environment in a trusted session; the release was stopped.`);
     }
   };
-  if (env.VERCEL_ENV === "production") {
+  // Production database commands run only on a real production deploy:
+  // Vercel sets VERCEL_ENV=production; Netlify sets NETLIFY=true with
+  // CONTEXT=production. Any other context skips migrations entirely.
+  const isProductionDeploy = env.VERCEL_ENV === "production"
+    || (env.NETLIFY === "true" && env.CONTEXT === "production");
+  if (isProductionDeploy) {
     // Never substitute integration-created/nonpooled URL variables: they can
     // point at another project. This must be the existing app connection.
     const databaseUrl = env.DATABASE_URL?.trim();
@@ -180,7 +185,7 @@ export function runBuild({ root = process.cwd(), env = process.env, run = spawnS
     step("Applying reviewed production migrations", prisma, ["migrate", "deploy", "--schema", "prisma/schema.prisma"], databaseEnv);
     step("Verifying completed production migrations (read-only)", prisma, execute, databaseEnv, migrationHistorySql(plan, true), true);
   } else {
-    log("Skipping database migrations outside Vercel production.");
+    log("Skipping database migrations outside a production deploy.");
   }
   step("Generating Prisma client", prisma, ["generate", "--schema", "prisma/schema.prisma"]);
   step("Building Next.js", next, ["build"]);

@@ -25,6 +25,18 @@ test("local, preview, development and misspelled production builds never run dat
     assert.ok(h.calls.every(call => call.options.input === undefined));
   }
 });
+test("Netlify production context runs the same database-guarded deploy", () => {
+  const h = harness({ NETLIFY: "true", CONTEXT: "production", DATABASE_URL: databaseUrl });h.invoke();
+  assert.deepEqual(h.calls.map(call => call.args.slice(1, 3)), [["db", "execute"], ["migrate", "deploy"], ["db", "execute"], ["generate", "--schema"], ["build"]]);
+  assert.ok(h.calls.every(call => call.options.env.DATABASE_URL === databaseUrl));
+});
+test("Netlify preview and branch contexts never run database commands", () => {
+  for (const CONTEXT of ["deploy-preview", "branch-deploy", "dev"]) {
+    const h = harness({ NETLIFY: "true", CONTEXT, DATABASE_URL: databaseUrl });h.invoke();
+    assert.equal(h.calls.length, 2);
+    assert.deepEqual(h.calls.map(call => call.args.slice(1)), [["generate", "--schema", "prisma/schema.prisma"], ["build"]]);
+  }
+});
 test("production checks history, deploys, rechecks all migrations, then generates and builds", () => {
   const h = harness({ VERCEL_ENV: "production", DATABASE_URL: databaseUrl, DATABASE_URL_UNPOOLED: wrongProject, URL_DATABASE_URL_UNPOOLED: wrongProject, URL_POSTGRES_URL_NON_POOLING: wrongProject });h.invoke();
   assert.deepEqual(h.calls.map(call => call.args.slice(1, 3)), [["db", "execute"], ["migrate", "deploy"], ["db", "execute"], ["generate", "--schema"], ["build"]]);

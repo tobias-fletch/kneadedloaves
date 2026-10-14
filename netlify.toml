@@ -1,0 +1,9 @@
+# Netlify deploys this Next.js app. Build settings live here so the dashboard
+# needs no manual configuration beyond connecting the repo and setting env vars
+# (see NETLIFY.md).
+[build]
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
