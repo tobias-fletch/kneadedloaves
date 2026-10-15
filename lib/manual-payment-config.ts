@@ -12,9 +12,8 @@ export function validVenmoDestination(value: string) {
 export function paymentReadiness(config: Record<string, string>) {
   const holdMinutes = Number(config.PAYMENT_HOLD_MINUTES);
   const reasons: string[] = [];
-  // Deliberate release hard-stop: only a separately approved code release may remove it.
-  // Existing environment variables or saved settings cannot enable production checkout.
-  if (process.env.NODE_ENV === "production") reasons.push("Checkout is paused for this release. Payment enablement requires a separately approved release.");
+  // Launch release (Oct 2026): the deliberate production hard-stop was removed
+  // by a separately approved release. The operational gates below still apply.
   if (config.VENMO_CHECKOUT_ENABLED !== "true") reasons.push("Venmo checkout is disabled.");
   if (!/^@[A-Za-z0-9_-]{3,30}$/.test(config.VENMO_HANDLE || "") || !validVenmoDestination(config.VENMO_DESTINATION || "")) reasons.push("A verified Venmo business handle and copied receiving link are required.");
   if (config.VENMO_DESTINATION_VERIFIED !== "true" || config.VENMO_VERIFIED_FINGERPRINT !== destinationFingerprint(config.VENMO_HANDLE || "", config.VENMO_DESTINATION || "")) reasons.push("The owner must verify the current receiving destination.");

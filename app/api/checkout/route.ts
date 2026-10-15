@@ -55,7 +55,8 @@ export async function POST(request: Request) {
       if (!lockedCart?.items.length) throw new Error("Your cart is empty.");
       const zone = parsed.data.fulfillmentType === "DELIVERY" && parsed.data.deliveryZoneId ? await tx.deliveryZone.findUnique({ where: { id: parsed.data.deliveryZoneId } }) : null;
       const pickup = parsed.data.fulfillmentType === "PICKUP" && parsed.data.pickupLocationId ? await tx.pickupLocation.findUnique({ where: { id: parsed.data.pickupLocationId } }) : null;
-      if (parsed.data.fulfillmentType === "DELIVERY" && (!zone?.active || !zone.zipCodes.includes(parsed.data.deliveryZip || ""))) throw new Error("Choose an active delivery zone covering your ZIP code.");
+      // A zone with no ZIP codes is a catch-all: it covers any delivery ZIP at its fee.
+      if (parsed.data.fulfillmentType === "DELIVERY" && (!zone?.active || (zone.zipCodes.length > 0 && !zone.zipCodes.includes(parsed.data.deliveryZip || "")))) throw new Error("Choose an active delivery zone covering your ZIP code.");
       if (parsed.data.fulfillmentType === "PICKUP" && !pickup?.active) throw new Error("Choose an active pickup location.");
       const deliveryFeeCents = zone?.feeCents || 0;
       const totalCents = lockedCart.items.reduce((sum,item) => sum + item.product.priceCents * item.quantity, deliveryFeeCents);
