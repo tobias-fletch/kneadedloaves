@@ -11,7 +11,8 @@ const links = [
   ["/admin/email", "Email"],
   ["/admin/social", "Social"],
   ["/admin/setup", "Setup"],
-  ["/admin/test-checkout", "Test checkout"]
+  ["/admin/test-checkout", "Test checkout"],
+  ["/account", "Account"],
 ];
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
@@ -26,6 +27,9 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         {links.map(([href, label]) => (
           <Link className="btn-secondary whitespace-nowrap" href={href} key={href}>{label}</Link>
         ))}
+        <form action="/api/auth/logout" method="post" className="shrink-0">
+          <button type="submit" className="btn-secondary whitespace-nowrap">Log out</button>
+        </form>
       </nav>
       {children}
     </main>
