@@ -26,3 +26,7 @@ Use the release report and CI run for the exact commit as verification evidence.
 The requested destination is ChatGPT Sites, retaining only shop items. Customers, orders, credentials and payment records are excluded from the catalog export. Keep the source database intact.
 
 This PostgreSQL/Node app is not a drop-in Sites deployment. See [HOSTING-MIGRATION.md](HOSTING-MIGRATION.md). Keep the current domain on its existing host until the replacement passes verification. Live settings, workers and provider delivery remain unverified in this checkout.
+
+## Verification on October 19
+
+The launch-readiness changes passed 95 unit tests, 27 disposable PostgreSQL migration-guard checks, 27 manual-payment lifecycle groups plus legacy migration/replay checks, and 14 production HTTP security/checkout/catalog-export groups. Type checking, the Next.js production build and worker/runtime bundles passed. The production npm audit returned zero vulnerabilities. Lint has no errors and one existing image-optimization warning. These checks used synthetic local data; no real provider payment or customer email was sent.

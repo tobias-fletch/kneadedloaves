@@ -28,3 +28,7 @@ Export from the current shop database to capture owner edits. Repository seed da
 ## Cutover
 
 Keep checkout disabled until provider delivery, expiry and checkout tests work. Add the exact domain to the destination Site, set its returned DNS records at IONOS, wait for domain/TLS verification, and test the canonical origin. Keep the old deployment available for rollback. No source database deletion or registrar transfer is required.
+
+## Captured public menu
+
+The public shop responded on October 19 with ordering closed and five products. `migration/public-catalog-2026-10-19.json` preserves their visible prices, descriptions, ingredient/allergen text and repository image paths. This is explicitly an incomplete public snapshot, not a substitute for the admin export: stock, hidden items and availability dates are unknown. Confirm missing ingredient/allergen information before launch.
