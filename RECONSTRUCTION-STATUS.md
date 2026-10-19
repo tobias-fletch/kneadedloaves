@@ -1,7 +1,5 @@
-# Work in progress: recovered Venmo implementation
+# Historical reconstruction note
 
-This branch is a reconstruction after the unpushed local candidate workspace was lost. It is not the previously tested artifact, not approved for promotion, and not a completed release. Prior test counts do not establish this candidate's correctness.
+The manual Venmo implementation was reconstructed in October 2026 and subsequently released on main. This is no longer an unpromoted reconstruction candidate. The October 15 release removed the production hard-stop while retaining default-off settings and operational gates.
 
-Checkout defaults disabled. Preview builds must never migrate databases. The production build guard refuses unbaselined history. No provider payment, live checkout enablement or customer email is authorized by this branch.
-
-Fresh independent verification is recorded in PRODUCTION-READINESS.md. Schema reconciliation review and exact release approval remain required before main promotion. Existing main design and all product artwork are preserved.
+Use [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md) for current status, [VENMO-OPERATIONS.md](VENMO-OPERATIONS.md) for operations, and the exact release commit's CI results as evidence. Older counts and statements about the historical production database are not current observations.

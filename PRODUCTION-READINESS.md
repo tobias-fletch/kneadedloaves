@@ -1,24 +1,28 @@
-# Manual Venmo release candidate: reconstruction in progress
+# Production readiness
 
-The prior unpushed candidate workspace was lost. This checkout is being reconstructed against verified GitHub main 28fb35fe86bf4f14592b7e6a5d20cd98eb57e4b0. Previous test counts do not certify this code. Fresh checks on 2026-10-13: 84 unit/render/security tests passed; 27 real PostgreSQL lifecycle groups plus legacy preservation/migration replay passed; 27 real PostgreSQL build-guard checks passed; TypeScript, lint (one existing image warning), production build and runtime bundles passed. Thirteen actual production-mode HTTP groups, including fully configured production checkout remaining blocked, and the full baseline-to-candidate rehearsal passed with nonempty synthetic-data preservation, orphan rollback and an empty final Prisma schema diff. The production guard accepts a checksum-matching, nonempty contiguous known migration prefix, including an initial-only baseline, then applies legitimate pending migrations with Prisma. Empty, gapped, out-of-order, failed, unknown, checksum-drifted and recognizable partial-effect states are rejected before writes. Initial-only upgrade with existing fixture data passed. Production audit has zero findings; full strict audit retains seven development-only high package nodes from one unpatched braces advisory, with no exception.
+Updated October 19, 2026. Source readiness and live operational readiness are separate.
 
-Production checkout is hard-disabled in code for this release regardless of environment/settings. Removal requires a separately approved code release. Payments also remain disabled by default. This site only reserves orders and records owner-checked external payment/refund evidence; it never sends money or verifies a provider transaction itself.
+## Release checks
 
-## Required release checks
+The October 15 GitHub run for `f5d4ff6` passed lint and unit tests but failed the migration integration step. The fixture expected five migrations after a sixth was added. The test now derives the complete count from the release plan while retaining checksum, ordering, schema, preservation and replay checks.
 
-- Fresh unit, lint, types, build, real disposable PostgreSQL lifecycle and actual production-mode HTTP tests.
-- Complete metadata-reviewed production baseline/reconciliation, verified recovery point and explicit authorization before writes. Existing production has application data with empty Prisma history; ordinary migration deployment must refuse that state.
-- GitHub main race check, reviewed source manifest and exact remote commit verification. Never push synthetic local snapshot history.
-- Preserve all existing artwork and UI design.
+The production HTTP suite now checks that configured production checkout reserves inventory exactly once and stays unpaid, while missing operational settings block a populated cart. Its old expectation of an unconditional production stop was obsolete. CI now includes this suite, manual-payment lifecycle tests, type checking, builds and a production dependency audit.
 
-## Operational launch gates
+Use the release report and CI run for the exact commit as verification evidence. Historical reconstruction test counts do not certify subsequent changes. Synthetic settings cannot prove live service readiness.
 
-- Owner-selected hold duration and actual pickup/delivery rules, pricing, tax/refund policy.
-- Owner verification of copied receiving destination. Public profile at https://www.venmo.com/u/kneadedloaves was confirmed; identity, receipt capability and payment processing were not tested.
-- Authenticated TLS SMTP delivery, deployed email and expiry workers, real-host smoke test, explicit payment enablement approval.
-- Canonical HTTPS APP_URL and strong session secret. Safe proxy/Host configuration, private receipt URL log redaction and no analytics leakage.
-- Actual browser walkthrough and Docker daemon build remain distinct from React-render/local runtime assembly tests.
+## Before accepting customers
 
-Full dependency audit remains strict. Report unpatched development-only findings honestly rather than weakening the gate. Production audit must be clean.
+- Verify the intended database, migration history, health, backups and restore rehearsal.
+- Rotate historical/default admin passwords, use a strong session secret, and preserve the correct encryption key for retained settings.
+- Independently verify the business receiving destination. The migration seeds a destination and 60-minute hold, but does not enable checkout or prove receipt capability.
+- Deploy and exercise email delivery and payment expiry. The current Node implementation requires authenticated TLS SMTP. Readiness flags are owner attestations, not worker monitoring.
+- Confirm products, photos, ingredients/allergens, prices, available stock, pickup details, delivery ZIPs/fees, ordering windows and capacity. Review the seeded catch-all $7 delivery zone: an empty ZIP list accepts any delivery ZIP.
+- Set the canonical HTTPS origin and test login, guest checkout, reload recovery, owner verification, expiry/restocking, cancellation/refund recording and real email delivery on the intended host. The admin rehearsal is only a simulation.
+- Supply customer contact details and approved customer policies. Configure monitoring and redact private receipt tokens from logs.
+- Enable `VENMO_CHECKOUT_ENABLED` only after these checks. The site records independently verified payments/refunds; it never transfers money.
 
-Unrelated pre-existing upload-handler and automatic-social-publishing gaps are not resolved by this payment/security scope.
+## Hosting migration
+
+The requested destination is ChatGPT Sites, retaining only shop items. Customers, orders, credentials and payment records are excluded from the catalog export. Keep the source database intact.
+
+This PostgreSQL/Node app is not a drop-in Sites deployment. See [HOSTING-MIGRATION.md](HOSTING-MIGRATION.md). Keep the current domain on its existing host until the replacement passes verification. Live settings, workers and provider delivery remain unverified in this checkout.

@@ -19,6 +19,7 @@ const databaseUrl = url.toString();
 const client = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
 const admin = new PrismaClient({ datasources: { db: { url: databaseUrl.replace(`schema=${schema}`, "schema=public") } } });
 const plan = readMigrationPlan(root), candidate = "20261012230000_manual_venmo_payments";
+const releaseMigrationCount = Object.keys(plan).length;
 assert.ok(plan[candidate], "restore the candidate migration before integration testing");
 const env = { ...process.env, DATABASE_URL: databaseUrl, VERCEL_ENV: "production" };
 const prisma = path.join(root, "node_modules/prisma/build/index.js");
@@ -84,12 +85,12 @@ try {
     await client.$executeRawUnsafe(`ALTER TABLE "${table}" DROP COLUMN "${column}"`);
   }
   const initialOnly = guarded();initialOnly.invoke();assert.equal(initialOnly.calls.length, 5);
-  assert.equal(await migrationCount(), 5);assert.deepEqual(await snapshot(), beforeUpgrade);
+  assert.equal(await migrationCount(), releaseMigrationCount);assert.deepEqual(await snapshot(), beforeUpgrade);
   const upgraded = (await client.$queryRawUnsafe('SELECT "paymentMethod","paymentState","paymentVerifiedAt","inventoryRestored" FROM "Order" WHERE "id" = $1', 'prefix-order'))[0];
   assert.deepEqual(upgraded, { paymentMethod: null, paymentState: 'UNPAID', paymentVerifiedAt: null, inventoryRestored: false });
   assert.equal((await client.$queryRawUnsafe('SELECT "sessionVersion" FROM "User" WHERE "id" = $1', 'prefix-user'))[0].sessionVersion, 0);
-  pass("initial-only real Prisma baseline applies remaining four migrations and preserves user/product/order/item fixtures");
-  guarded().invoke();assert.equal(await migrationCount(), 5);assert.deepEqual(await snapshot(), beforeUpgrade);
+  pass("initial-only real Prisma baseline applies all pending migrations and preserves user/product/order/item fixtures");
+  guarded().invoke();assert.equal(await migrationCount(), releaseMigrationCount);assert.deepEqual(await snapshot(), beforeUpgrade);
   pass("initial-only upgrade is idempotent and preserves existing fixture data on replay");
 
   // Reset only this random disposable schema for deliberately corrupted-history
@@ -134,10 +135,10 @@ try {
   await client.$executeRawUnsafe('ALTER TABLE "Order" ADD COLUMN "paymentState" TEXT');
   await rejected("unrecorded partial manual-payment schema rejected before writes", /partial or unrecorded/);
   await client.$executeRawUnsafe('ALTER TABLE "Order" DROP COLUMN "paymentState"');
-  const clean = guarded();clean.invoke();assert.equal(clean.calls.length, 5);assert.equal(await migrationCount(), 5);
+  const clean = guarded();clean.invoke();assert.equal(clean.calls.length, 5);assert.equal(await migrationCount(), releaseMigrationCount);
   assert.equal((await client.$queryRawUnsafe('SELECT checksum FROM "_prisma_migrations" WHERE migration_name = $1', candidate))[0].checksum, plan[candidate]);
   pass("valid baseline applies migration and verifies history/schema before mocked build");
-  guarded().invoke();assert.equal(await migrationCount(), 5);pass("already-applied release is idempotent");
+  guarded().invoke();assert.equal(await migrationCount(), releaseMigrationCount);pass("already-applied release is idempotent");
   await client.$executeRawUnsafe('ALTER TABLE "PaymentEvent" RENAME TO "UnexpectedPaymentEvent"');
   await rejected("recorded migration with missing PaymentEvent rejected before writes", /required application table/);
   await client.$executeRawUnsafe('ALTER TABLE "UnexpectedPaymentEvent" RENAME TO "PaymentEvent"');

@@ -31,7 +31,8 @@ const net = require('node:net');
 }); })().catch(error => { console.error(error); process.exitCode = 1; });
 JS
 "$PG/initdb" -D "$QA_DIR/pgdata" --username=agent --auth=trust --no-locale --encoding=UTF8 > "$QA_DIR/initdb.log"
-"$PG/pg_ctl" -D "$QA_DIR/pgdata" -l "$QA_DIR/postgres.log" -o "-h 127.0.0.1 -p 55498 -c unix_socket_directories=''" start
+printf "\nunix_socket_directories = ''\n" >> "$QA_DIR/pgdata/postgresql.conf"
+"$PG/pg_ctl" -D "$QA_DIR/pgdata" -l "$QA_DIR/postgres.log" -o "-h 127.0.0.1 -p 55498" start
 DB_STARTED=1
 DATABASE_URL='postgresql://agent@127.0.0.1:55498/postgres' node - <<'JS'
 const { PrismaClient } = require('@prisma/client'); const prisma = new PrismaClient();

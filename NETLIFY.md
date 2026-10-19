@@ -1,6 +1,6 @@
 # Hosting the shop on Netlify
 
-The repo is Netlify-ready: `netlify.toml` sets the build command (`npm run build`)
+This is an optional Node hosting path; the requested Sites migration is documented in HOSTING-MIGRATION.md. Configuration exists but hosted behavior must still be verified: `netlify.toml` sets the build command (`npm run build`)
 and publish directory (`.next`), and the build script runs the guarded Prisma
 migrations on Netlify production deploys exactly as it did on Vercel
 (`NETLIFY=true` + `CONTEXT=production`). Preview/branch deploys never migrate.
@@ -31,19 +31,19 @@ migrations on Netlify production deploys exactly as it did on Vercel
 In **Domain settings → Add custom domain**, add `kneadedloaves.com` and
 `www.kneadedloaves.com`, then at your registrar:
 
-- Apex (`kneadedloaves.com`): `A` record → `75.2.60.5` (Netlify load balancer)
+- Apex (`kneadedloaves.com`): use the exact current apex records provided by the Netlify domain setup
 - `www`: `CNAME` → `<your-site>.netlify.app`
 
-TLS certificates are issued automatically. After DNS propagates, remove the
-domains from the Vercel project (or delete it) so traffic stops going there.
+TLS certificates are issued automatically. After DNS propagates and the replacement passes checkout verification, retire the
+domains from the Vercel project only after retaining a rollback path.
 
 ## 3. Things that do NOT move to Netlify
 
 - **Email + payment-expiry workers** (`npm run email:worker:production`,
-  `npm run payments:expire:production`) need an always-on host — same as today,
-  they never ran on Vercel either. Keep them wherever they run now.
-- **Admin uploads** (`/api/admin/uploads`): Netlify functions have ephemeral
-  disk, so files uploaded via the admin panel won't survive deploys. Keep using
-  committed `/menu-art/...` images (the current products already do).
-- **Checkout** stays hard-stopped until the Venmo gates in `VENMO-OPERATIONS.md`
+  `npm run payments:expire:production`) need a supervised runner;
+  this repository does not configure them on Vercel or Netlify. Verify where they run before enabling checkout.
+- **Image storage**: the current repository has no admin upload handler. Serverless functions have ephemeral
+  disk, so disk-based uploads need durable external storage. Keep using
+  committed `/menu-art/...` images (verify live product references before moving).
+- **Checkout** stays disabled until the Venmo gates in `VENMO-OPERATIONS.md`
   are configured and verified — hosting change does not lift that.

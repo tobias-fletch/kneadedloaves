@@ -1,31 +1,31 @@
 # Kneaded Loaves deployment
 
-The current site runs on Vercel with Node 24. This manual Venmo candidate is not deployed. Checkout remains disabled until the owner configures and verifies all gates in VENMO-OPERATIONS.md. A separate email/expiry runner is required before accepting orders.
+GitHub reported a successful Vercel deployment of f5d4ff6 on October 15, 2026. The manual Venmo release removed the unconditional production hard-stop; checkout still defaults off until every gate in VENMO-OPERATIONS.md passes. A separate email/expiry runner is required. The requested move to ChatGPT Sites is described in HOSTING-MIGRATION.md; this document covers the existing Node/PostgreSQL deployment.
 
-Production build migration handling is guarded and uses DATABASE_URL only. The existing live schema needs separately approved baseline reconciliation; do not deploy blindly, reset data, or substitute another integration URL. Preview builds never migrate.
+Production build migration handling is guarded and uses DATABASE_URL only. Inspect current target migration history; any unbaselined or inconsistent schema needs separate reconciliation; do not deploy blindly, reset data, or substitute another integration URL. Preview builds never migrate.
 
-The production guard accepts a nonempty, checksum-matching contiguous prefix of the repository migrations, including a separately approved initial-only baseline. Completed records must be in migration order. It rejects empty/unbaselined history, gaps, out-of-order records, unknown or unresolved failed migrations, checksum drift, and recognizable schema effects whose migration is not recorded. Required table/column checks follow the recorded prefix: AppConfig is required after its migration, hardening fields/tables after hardening, and manual-payment fields/PaymentEvent after the final migration. These presence checks are not a complete type/index/constraint comparison.
+The production guard accepts a nonempty, checksum-matching contiguous prefix of the repository migrations, including a separately approved initial-only baseline. Completed records must be in migration order. It rejects empty/unbaselined history, gaps, out-of-order records, unknown or unresolved failed migrations, checksum drift, and recognizable schema effects whose migration is not recorded. Required table/column checks follow the recorded prefix: AppConfig is required after its migration, hardening fields/tables after hardening, and manual-payment fields/PaymentEvent after the manual-payment migration. These presence checks are not a complete type/index/constraint comparison.
 
-After the read-only preflight succeeds, normal Prisma migration deployment executes every remaining migration, followed by a read-only completion check before client generation and the Next.js build. The helper never inserts or resolves baseline/history records itself. An initial-only baseline therefore runs migrations 2–4 and the new manual-payment migration; do not mark those pending migrations applied without executing them.
+After the read-only preflight succeeds, normal Prisma migration deployment executes every remaining migration, followed by a read-only completion check before client generation and the Next.js build. The helper never inserts or resolves baseline/history records itself. An initial-only baseline runs every remaining migration, including the manual-payment schema and launch configuration; do not mark those pending migrations applied without executing them.
 
 ## Required services and settings
 
 The production domain is `kneadedloaves.com`. Copy `.env.production.example` to the ignored `.env.production` on the host and supply the missing secrets and provider settings. The Docker build passes the public URL at build time, because Next.js embeds public environment variables in the browser bundle. Rebuild the image if the domain changes.
 
-The following infrastructure checklist is generic operator guidance, not a request to change the existing host or DNS. Keep checkout paused during release; provider payment readiness is a separate launch decision.
+Apply this infrastructure checklist to the selected Node host; Sites requires the runtime adaptations in HOSTING-MIGRATION.md. Keep checkout paused during release; provider payment readiness is a separate launch decision.
 
 1. Provision PostgreSQL with authenticated TLS access and automated backups. Set `DATABASE_URL` in the host secret manager. Do not expose the local development cluster publicly.
 2. Set `APP_URL` and `NEXT_PUBLIC_APP_URL` to the same HTTPS domain. Configure DNS, TLS termination, upstream timeouts, a 6 MB request limit and error-log retention at your reverse proxy/host.
 3. Set a random `JWT_SECRET` of at least 32 characters and a separate `CONFIG_ENCRYPTION_KEY` of exactly 64 random hexadecimal characters. Store and back up the encryption key separately from database backups. Environment values take precedence over admin-saved values.
 4. Set SMTP host, TLS port (465, 587 or 2525), username, password and sender. Verify the sender with your provider and configure its SPF/DKIM/DMARC records. Run a real delivery/recovery test after credentials are supplied. No outgoing mail was sent during development verification.
-5. Mount persistent storage at `UPLOAD_DIR` (Docker defaults to `/app/uploads`). Back up that volume and preserve existing `public/uploads` files when deploying current photos. New images are decoded and re-encoded as WebP. A shared volume is required if multiple web instances serve uploads.
+5. Mount persistent storage at `UPLOAD_DIR` (Docker defaults to `/app/uploads`). Back up that volume and preserve existing `public/uploads` files when deploying current photos. The image sanitizer supports WebP re-encoding, but there is currently no admin upload handler. A shared volume is required if multiple web instances serve uploads.
 6. Set `TRUST_PROXY=true` only if the trusted proxy replaces incoming `X-Forwarded-For` with the real client IP. Otherwise limits intentionally share one bucket. Enforce rate limits and body/connection timeouts at the edge too.
 
 ## Release
 
-Run `npm ci`, `npm run prisma:generate`, `npm run lint`, `npm test`, `npm audit --audit-level=moderate`, and `npm run build` in CI. Do not run development mode publicly.
+Run `npm ci`, `npm run prisma:generate`, `npm run lint`, `npm test`, `npm audit --omit=dev --audit-level=moderate`, and `npm run build` in CI. Do not run development mode publicly.
 
-Back up the database before migration. For a non-Vercel release, run `npm run prisma:deploy` from an approved full-install build/release environment after baseline review, then supervise the web, email and expiry services. The slim runtime contains worker bundles but no Prisma CLI or TypeScript runner. The worker supports `--once` for a one-pass diagnostic. It records delivery attempts in `/admin/email`; failed messages can be retried there. SMTP is at-least-once: a crash after provider acceptance can cause a duplicate. Stable message IDs help diagnosis but do not guarantee provider deduplication.
+Back up the database before migration. Outside Vercel/Netlify production build contexts, run `npm run prisma:deploy` from an approved full-install build/release environment after baseline review, then supervise the web, email and expiry services. The slim runtime contains worker bundles but no Prisma CLI or TypeScript runner. The worker supports `--once` for a one-pass diagnostic. It records delivery attempts in `/admin/email`; failed messages can be retried there. SMTP is at-least-once: a crash after provider acceptance can cause a duplicate. Stable message IDs help diagnosis but do not guarantee provider deduplication.
 
 For Docker, prepare an ignored `.env.production` with the values above, then:
 
@@ -40,7 +40,7 @@ The supplied compose file binds the web port to loopback for a local reverse pro
 
 Create the real admin using `ADMIN_EMAIL` and `ADMIN_PASSWORD` from a secure shell/secret manager, then run `npm run admin:setup` in the approved full-install release environment. Remove `ADMIN_PASSWORD` after use. Existing default accounts must be removed or have passwords changed. Sample passwords are rejected at production login; sample seeding is blocked in production. Do not run the sample seed on production data.
 
-If importing an older database with plaintext admin-saved secrets, set the encryption key and run `npm run secrets:encrypt` before serving production traffic. The local database has already been migrated to encrypted stored secrets; preserve its existing key if moving that database.
+If importing an older database with plaintext admin-saved secrets, set the encryption key and run `npm run secrets:encrypt` before serving production traffic. Preserve the existing encryption key if moving encrypted saved settings; do not assume a historical local database matches the current production database.
 
 ## Health, backup and rollback
 
@@ -52,11 +52,19 @@ If importing an older database with plaintext admin-saved secrets, set the encry
 
 ## Final owner checks
 
-- Confirm menu, photos, prices, stock, allergens/ingredients, contact details and pickup/delivery instructions. Create the next ordering window when launch is ready; the existing local schedule has no open window.
+- Confirm menu, photos, prices, stock, allergens/ingredients, contact details and pickup/delivery instructions. Create or verify the next ordering window and its capacity when launch is ready.
 - Supply and approve customer policies and any required business notices based on your operation/location; these cannot be accurately invented from source code.
-- Connect hosting/domain and SMTP, replace seed credentials, verify mobile ordering once Stripe is completed, and perform a hosted backup/restore rehearsal.
+- Connect hosting/domain and SMTP, replace seed credentials, verify mobile ordering with manual Venmo, and perform a hosted backup/restore rehearsal.
 - Social drafting remains available. Automatic publication needs each platform's accounts, app permissions and API integration; credentials alone do not enable it. Until then, publish approved copy manually. No social messages were published.
 
 ## Integration tests
 
-Use a dedicated database named `kneaded_loaves_test`, apply migrations, then start a dev server on port 3001 with that database, `APP_URL=http://127.0.0.1:3001`, `NEXT_PUBLIC_APP_URL=http://127.0.0.1:3001` and an empty `STRIPE_SECRET_KEY`. In another shell with the same database URL, run `npx tsx tests/integration.ts`. The script refuses other database names and clears test data. Never use production credentials for tests.
+Use a dedicated database named `kneaded_loaves_test`, apply migrations, then start a dev server on port 3001 with that database, `APP_URL=http://127.0.0.1:3001`, `NEXT_PUBLIC_APP_URL=http://127.0.0.1:3001` and an empty `STRIPE_SECRET_KEY`. In another shell with the same database URL, run `npm run test:integration`. The script refuses other database names and clears test data. Never use production credentials for tests.
+
+### Full isolated checks
+
+- Migration guard: point `BUILD_GUARD_TEST_DATABASE_URL` at a disposable loopback PostgreSQL cluster on port 55499, database `postgres`, then run `node tests/build-guard.integration.mjs`. It creates and removes only a random test schema.
+- Manual payments: `PG_BIN=/trusted/postgres/bin bash scripts/test-manual-payments.sh` creates a temporary cluster on 55497 and a test server on 3317. On Windows, use Git Bash and the installed PostgreSQL bin directory. Stop other Next dev servers first.
+- Production security: after `npm run build`, run `PG_BIN=/trusted/postgres/bin bash scripts/test-production-security.sh`. It creates a temporary cluster on 55498 and runs the built app on 3318, including missing-origin and fully configured checkout scenarios.
+
+The isolated shell harnesses refuse local environment files and use synthetic credentials. They do not send customer mail or contact Venmo. Do not point any test at live data. CI runs production HTTP checks in addition to the manual lifecycle suite.
