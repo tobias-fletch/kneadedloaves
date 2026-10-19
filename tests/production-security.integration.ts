@@ -60,6 +60,9 @@ async function main() {
     pass("production mutations fail closed without canonical configuration; health remains readable"); return;
   }
   assert.equal(process.env.TEST_SECURITY_MODE, "configured");
+  // Launch migrations seed destination settings. This isolated database must
+  // begin with no configuration so default-off tests remain meaningful.
+  await prisma.appConfig.deleteMany();
   for (const path of ["/api/cart", "/api/checkout", "/api/checkout/recover", "/api/contact", "/api/auth/login", "/api/auth/logout", "/api/auth/forgot-password", "/api/admin/setup", "/api/admin/uploads"]) {
     for (const origin of [null, "null", "https://attacker.example"]) assert.equal((await request(path, { body: {}, origin })).status, 403, `${path}: ${origin}`);
     assert.equal((await request(path, { body: {}, requestHost: "attacker.example" })).status, 403, path);
@@ -140,8 +143,8 @@ async function main() {
   const accountRecovered = await recover(accountKey, accountCookie); assert.equal(accountRecovered.status, 200, await accountRecovered.clone().text()); assert.equal((await accountRecovered.json()).orderId, accountOrder.id);
   assert.equal(await prisma.order.count(), 2); assert.equal(await prisma.paymentEvent.count(), 0); assert.equal(await prisma.emailJob.count(), 0);
   pass("account recovery rejects unrelated accounts and guest cookies without creating orders, events, or email");
-  // Even a fully enabled saved configuration must not bypass this release's
-  // production hard-stop. All credentials below are local synthetic fixtures;
+  // Fully configured checkout must work in production after the launch release.
+  // All credentials below are local synthetic fixtures;
   // the harness never starts an email worker or contacts a payment provider.
   const enabledHandle = "@synthetic-bakery";
   const enabledDestination = "https://venmo.com/synthetic-bakery";
@@ -155,20 +158,55 @@ async function main() {
   };
   await prisma.appConfig.createMany({ data: Object.entries(enabledConfig).map(([key, value]) => ({ key, value, secret: false })) });
   try {
-    const paused = await checkout();
-    assert.equal(paused.status, 503, await paused.clone().text());
-    assert.deepEqual(await paused.json(), { error: "Online checkout is not available yet. Please contact the bakery." });
+    const product = await prisma.product.create({ data: { name: "Synthetic production loaf", slug: randomUUID(), description: "QA only", priceCents: 1200, inventoryLimit: 2 } });
+    await prisma.pickupLocation.create({ data: { id: "synthetic-pickup", name: "Synthetic pickup", address: "QA only" } });
+    await prisma.orderWindow.create({ data: { name: "Synthetic window", opensAt: new Date(Date.now() - 60000), closesAt: new Date(Date.now() + 3600000), fulfillmentDate: new Date(Date.now() + 86400000), maxOrders: 2 } });
+    const cart = await request("/api/cart", { body: { productId: product.id, quantity: 1 } });
+    assert.equal(cart.status, 200, await cart.clone().text());
+    const cartCookie = cart.headers.get("set-cookie")!.split(";")[0];
+    const key = randomUUID();
+    const reserve = () => request("/api/checkout", { cookie: cartCookie, body: { customerName: "Synthetic customer", customerEmail: "test@example.invalid", fulfillmentType: "PICKUP", pickupLocationId: "synthetic-pickup" }, headers: { "Idempotency-Key": key } });
+    // A missing operational gate still blocks a real, populated cart.
+    await prisma.appConfig.update({ where: { key: "PAYMENT_WORKERS_READY" }, data: { value: "false" } });
+    assert.equal((await reserve()).status, 503);
+    assert.equal(await prisma.order.count(), 2);
+    assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).inventoryLimit, 2);
+    await prisma.appConfig.update({ where: { key: "PAYMENT_WORKERS_READY" }, data: { value: "true" } });
+    const placed = await reserve();
+    assert.equal(placed.status, 200, await placed.clone().text());
+    const placedReceipt = await placed.json();
+    const repeated = await reserve();
+    assert.equal(repeated.status, 200, await repeated.clone().text());
+    assert.deepEqual(await repeated.json(), placedReceipt);
+    const order = await prisma.order.findUniqueOrThrow({ where: { id: placedReceipt.orderId } });
+    assert.equal(order.paymentState, "UNPAID"); assert.equal(order.status, "PENDING");
+    assert.equal(order.totalCents, 1200); assert.equal(order.paymentVerifiedAt, null);
+    assert.equal((await prisma.product.findUniqueOrThrow({ where: { id: product.id } })).inventoryLimit, 1);
+    for (const cookie of [undefined, accountCookie]) {
+      assert.notEqual((await request("/api/admin/products/export", { method: "GET", cookie })).status, 200);
+    }
+    const exported = await request("/api/admin/products/export", { method: "GET", cookie: adminCookie });
+    assert.equal(exported.status, 200, await exported.clone().text());
+    assert.match(exported.headers.get("content-disposition") || "", /attachment/);
+    assert.match(exported.headers.get("cache-control") || "", /no-store/);
+    const catalog = await exported.json();
+    assert.equal(catalog.format, "kneaded-loaves-catalog"); assert.equal(catalog.version, 1);
+    assert.equal(catalog.products.length, 1); assert.equal(catalog.products[0].priceCents, 1200);
+    assert.equal(catalog.products[0].inventoryLimit, 1);
+    assert.deepEqual(Object.keys(catalog).sort(), ["categories", "currency", "exportedAt", "format", "products", "version"]);
+    assert.doesNotMatch(JSON.stringify(catalog), /customerEmail|passwordHash|SMTP_|paymentReference|sessionVersion|orderItems/);
+    pass("catalog download is admin-only, uncached and excludes customer/order/payment data");
     const stillRecoverable = await recover(guestKey, guestCookie);
     assert.equal(stillRecoverable.status, 200, await stillRecoverable.clone().text());
     assert.deepEqual(await stillRecoverable.json(), receipt);
-    assert.equal(await prisma.order.count(), 2); assert.equal(await prisma.paymentEvent.count(), 0); assert.equal(await prisma.emailJob.count(), 0);
+    assert.equal(await prisma.order.count(), 3); assert.equal(await prisma.paymentEvent.count(), 0); assert.equal(await prisma.emailJob.count(), 1);
     const pausedGuest = await prisma.order.findUniqueOrThrow({ where: { id: guestOrder.id } });
     assert.equal(pausedGuest.status, "CANCELLED"); assert.equal(pausedGuest.paymentState, "REVIEW"); assert.equal(pausedGuest.inventoryRestored, true);
     assert.equal(pausedGuest.receiptTokenHash, digest(recoveredToken));
   } finally {
     await prisma.appConfig.deleteMany({ where: { key: { in: Object.keys(enabledConfig) } } });
   }
-  pass("production release hard-stop blocks checkout with every payment gate enabled, preserves orders, and permits owner recovery");
+  pass("production checkout requires operational gates, reserves once when enabled, stays unpaid, and preserves existing recovery");
   await prisma.$executeRawUnsafe('ALTER TABLE "RateLimit" RENAME TO "RateLimit_security_unavailable"');
   try { assert.equal((await request("/api/auth/forgot-password", { body: { email: user.email } })).status, 429); assert.equal(await prisma.passwordReset.count(), 0); }
   finally { await prisma.$executeRawUnsafe('ALTER TABLE "RateLimit_security_unavailable" RENAME TO "RateLimit"'); }

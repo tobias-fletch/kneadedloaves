@@ -21,7 +21,7 @@ This is a no-money UI rehearsal using fictional products, pickup location, and d
 - Trial code imports only React, production pure validation/money helpers, and its own pure state machine.
 - Trial state stays in React memory; it does not use cookies, browser storage, emails, cart/checkout APIs, or database writes.
 - Standard application layout/session loading still performs its usual read-only rendering and authentication work. The surrounding application's ordinary navigation remains available.
-- Production payments remain controlled by existing production settings and hard stops; this patch does not modify them.
+- Production payments remain controlled by the operational readiness settings. The October 15 release removed the unconditional hard-stop; the trial does not enable checkout.
 
 ## Checks
 
@@ -29,4 +29,4 @@ This is a no-money UI rehearsal using fictional products, pickup location, and d
 
 Focused `tests/checkout-trial.test.ts` covers field/quantity/ZIP validation, totals, claims staying unpaid, exact-amount verification, pickup/delivery paths, cancel/expiry terminal states, the server authentication call, and an explicit dependency allowlist excluding networking and storage from trial code.
 
-Before merging, reapply this additive patch onto the actual released source, preserve all production payment hard stops, rerun checks, and verify mobile UI and authenticated access. Do not run the production build wrapper or integration tests against the production database for rehearsal QA.
+When changing the trial, preserve production readiness gates, rerun checks, and verify mobile UI and authenticated access. Do not run the production build wrapper or integration tests against the production database for rehearsal QA.

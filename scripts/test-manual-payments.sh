@@ -13,8 +13,9 @@ export CONFIG_ENCRYPTION_KEY='02020202020202020202020202020202020202020202020202
 export APP_URL='http://127.0.0.1:3317' TEST_APP_URL='http://127.0.0.1:3317'
 unset VENMO_CHECKOUT_ENABLED VENMO_HANDLE VENMO_DESTINATION VENMO_DESTINATION_VERIFIED VENMO_VERIFIED_FINGERPRINT VENMO_DESTINATION_FINGERPRINT PAYMENT_HOLD_MINUTES PAYMENT_WORKERS_READY CHECKOUT_SMOKE_TESTED SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASSWORD EMAIL_FROM STRIPE_SECRET_KEY STRIPE_WEBHOOK_SECRET
 export TSX_TSCONFIG_PATH="$REPO/tsconfig.json"
-"$PG/initdb" -D "$QA_DIR/pgdata" --auth=trust --no-locale --encoding=UTF8 > "$QA_DIR/initdb.log"
-"$PG/pg_ctl" -D "$QA_DIR/pgdata" -l "$QA_DIR/postgres.log" -o "-h 127.0.0.1 -p 55497 -c unix_socket_directories=''" start
+"$PG/initdb" -D "$QA_DIR/pgdata" --username=agent --auth=trust --no-locale --encoding=UTF8 > "$QA_DIR/initdb.log"
+printf "\nunix_socket_directories = ''\n" >> "$QA_DIR/pgdata/postgresql.conf"
+"$PG/pg_ctl" -D "$QA_DIR/pgdata" -l "$QA_DIR/postgres.log" -o "-h 127.0.0.1 -p 55497" start
 APP_PID=''
 cleanup(){ if [[ -n "$APP_PID" ]]; then kill "$APP_PID" 2>/dev/null || true; fi; "$PG/pg_ctl" -D "$QA_DIR/pgdata" stop -m fast; printf '\nReconstructed QA evidence: %s\n' "$QA_DIR"; }
 trap cleanup EXIT

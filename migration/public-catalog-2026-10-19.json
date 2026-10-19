@@ -1,0 +1,16 @@
+{
+  "format": "kneaded-loaves-public-catalog-snapshot",
+  "version": 1,
+  "source": "https://kneadedloaves.com/shop",
+  "observedOn": "2026-10-19",
+  "completeAdminExport": false,
+  "notes": "Public menu only. Hidden items, stock quantities, original slugs, category IDs and availability dates require an admin export. Null ingredients/allergens mean the menu did not provide them; they do not mean allergen-free. Image paths match repository artwork. Do not automatically enable checkout or invent inventory from this snapshot.",
+  "currency": "USD",
+  "products": [
+    { "name": "Artisan Bread", "priceCents": 1200, "description": "Artisan bread.", "ingredients": null, "allergens": null, "imageUrl": "/menu-art/artisan-bread.jpg", "inventoryLimit": null },
+    { "name": "Bagels (6 pack)", "priceCents": 800, "description": "Six-pack of bagels.", "ingredients": null, "allergens": null, "imageUrl": "/menu-art/bagels.jpg", "inventoryLimit": null },
+    { "name": "Cookies (6 pack)", "priceCents": 600, "description": "Six-pack of cookies.", "ingredients": null, "allergens": null, "imageUrl": "/menu-art/cookies.jpg", "inventoryLimit": null },
+    { "name": "Herbal Focaccia", "priceCents": 1050, "description": "Our signature fluffy focaccia,seasoned and baked with fresh, seasonal herbs.", "ingredients": null, "allergens": ["Gluten"], "imageUrl": "/menu-art/herb-focaccia.jpg", "inventoryLimit": null },
+    { "name": "Plain Focaccia", "priceCents": 1000, "description": "Fluffy, bubbly, delicious, focaccia bread.", "ingredients": ["Bread flour", "water", "salt", "yeast"], "allergens": ["Gluten"], "imageUrl": "/menu-art/focaccia.jpg", "inventoryLimit": null }
+  ]
+}

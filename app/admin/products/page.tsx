@@ -25,6 +25,10 @@ export default async function AdminProductsPage() {
 
   return (
     <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-ink/70">Download your shop items, categories and image references.</p>
+        <a className="btn-secondary" href="/api/admin/products/export" download>Export shop items</a>
+      </div>
       <InventoryCounts
         rows={products.map((product) => ({
           id: product.id,
