@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Anton, Inter, Oswald } from "next/font/google";
 import Link from "next/link";
 import { UserRound } from "lucide-react";
+import { Analytics } from "@vercel/analytics/next";
 import { CartDrawerButton } from "@/components/CartDrawerButton";
 import { ContactFooter } from "@/components/ContactFooter";
 import { InlineAdminPanel } from "@/components/InlineAdminPanel";
@@ -67,6 +68,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {children}
         <ContactFooter contact={contact} />
         {session?.role === "ADMIN" ? <InlineAdminPanel initialSettings={publicSettings} initialAppearance={appearance} /> : null}
+        <Analytics />
       </body>
     </html>
   );
