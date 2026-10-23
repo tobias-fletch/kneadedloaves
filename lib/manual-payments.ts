@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { queueEmail } from "@/lib/email-queue";
+import { detailsFromOrder, fulfillmentDateFor, renderOrderEmail, type OrderEmailKind } from "@/lib/order-email";
 import { runBounded } from "@/lib/worker-batch";
 
 export const paymentEvidenceSchema = z.object({
@@ -28,13 +29,17 @@ export async function restoreInventory(tx: Prisma.TransactionClient, order: Awai
   }
   await tx.order.update({ where: { id: order.id }, data: { inventoryRestored: true } });
 }
+async function queueLifecycleEmail(tx: Prisma.TransactionClient, order: Awaited<ReturnType<typeof lockOrder>>, kind: OrderEmailKind, dedupeKey: string) {
+  const rendered = renderOrderEmail(kind, detailsFromOrder(order, await fulfillmentDateFor(tx, order.orderWindowId)));
+  await queueEmail({ dedupeKey, to: order.customerEmail, subject: rendered.subject, body: rendered.text, html: rendered.html }, tx);
+}
 export async function expireOrder(tx: Prisma.TransactionClient, id: string, now = new Date()) {
   const order = await lockOrder(tx, id);
   if (order.paymentMethod !== "VENMO" || order.status !== "PENDING" || !order.paymentDueAt || order.paymentDueAt > now || order.paymentState === "VERIFIED") return false;
   await restoreInventory(tx, order);
   await tx.order.update({ where: { id }, data: { status: "CANCELLED" } });
   await tx.paymentEvent.create({ data: { orderId: id, type: "EXPIRED", note: "Unpaid reservation expired; any late payment needs independent reconciliation." } });
-  await queueEmail({ dedupeKey: `expired:${id}`, to: order.customerEmail, subject: "Your bakery reservation expired", body: `Reservation ${order.paymentReference} expired before payment was verified. Do not send a new payment. If you already paid, keep your receipt and contact the bakery for reconciliation. Your order is not scheduled for fulfillment.` }, tx);
+  await queueLifecycleEmail(tx, order, "reservation-expired", `expired:${id}`);
   return true;
 }
 async function expireUnpaidOrdersOnce(now: Date) {
@@ -80,7 +85,7 @@ export async function recordPaymentEvidence(tx: Prisma.TransactionClient, id: st
     if (input.amountCents !== order.totalCents || input.currency !== order.currency) throw new Error("Payment must exactly match the order total and currency. Record discrepancies for review.");
     if (order.paymentEvents.some(event => event.type === "REVIEW" || event.type === "REFUND")) throw new Error("This order has a payment discrepancy. Resolve it through owner reconciliation; automatic fulfillment is blocked.");
     await tx.order.update({ where: { id }, data: { status: "PAID", paymentState: "VERIFIED", paymentVerifiedAt: now, paymentVerifiedBy: actorId, verifiedAmountCents: input.amountCents, providerTransactionId: input.providerTransactionId } });
-    await queueEmail({ dedupeKey: `payment-verified:${id}`, to: order.customerEmail, subject: "Bakery payment verified", body: `Payment for order ${order.paymentReference} has been independently verified by the bakery. Your order is now paid. Fulfillment: ${order.fulfillmentLocation || order.fulfillmentType}. ${order.fulfillmentInstructions || ""}` }, tx);
+    await queueLifecycleEmail(tx, order, "payment-verified", `payment-verified:${id}`);
   } else if (input.action === "review") {
     // A new receipt can arrive even after fulfillment or a previous full refund.
     // Record it without changing the closed fulfillment state or reservations.
