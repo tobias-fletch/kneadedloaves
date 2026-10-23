@@ -8,20 +8,16 @@ import { getStorefrontOrderingState } from "@/lib/storefront-ordering";
 import { formatMoney } from "@/lib/money";
 
 export default async function HomePage() {
-  let data;
   try {
-    data = await Promise.all([
-      getStorefrontOrderingState(),
+    const ordering = await getStorefrontOrderingState();
+    const [settings, products, events] = await Promise.all([
       prisma.adminSettings.findFirst(),
       prisma.product.findMany({ where: { active: true }, include: { images: true, category: true }, orderBy: { name: "asc" } }),
       prisma.popupEvent.findMany({ where: { startsAt: { gte: new Date() } }, take: 3, orderBy: { startsAt: "asc" } })
     ]);
-  } catch (error) {
-    return <DatabaseSetup detail={databaseErrorMessage(error)} />;
-  }
-  const [{ openWindow, nextWindow, orderingOpen, unavailable, contact }, settings, products, events] = data;
+    const { openWindow, nextWindow, orderingOpen, unavailable, contact } = ordering;
 
-  return (
+    return (
     <main>
       <section className="border-b-4 border-ink">
         <div className="section py-10">
@@ -121,5 +117,8 @@ export default async function HomePage() {
         </div>
       </section>
     </main>
-  );
+    );
+  } catch (error) {
+    return <DatabaseSetup detail={databaseErrorMessage(error)} />;
+  }
 }

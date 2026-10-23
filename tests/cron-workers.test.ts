@@ -7,6 +7,8 @@ import { isCronAuthorized } from "../lib/cron-auth";
 import { handleCron } from "../lib/cron-route";
 import { processOrderEmails } from "../lib/email-maintenance";
 import { emailDedupeLike, emailJobIsClaimable, processEmailQueue } from "../lib/email-queue";
+import { expireUnpaidOrders } from "../lib/manual-payments";
+import { prisma } from "../lib/prisma";
 import { runBounded } from "../lib/worker-batch";
 
 const secret = "cron-test-secret";
@@ -88,6 +90,26 @@ test("email claims stay idempotent and order filters do not treat underscores as
   assert.match(queue, /update:\s*\{\s*\}/);
   assert.match(queue, /FOR UPDATE SKIP LOCKED LIMIT 1/);
   assert.match(queue, /dedupeKey" LIKE \$\{like\} ESCAPE '\\\\'/);
+});
+
+test("overlapping expiry checks share one batch", async (t) => {
+  const orders = prisma.order.findMany;
+  const transaction = prisma.$transaction;
+  let calls = 0;
+  Reflect.set(prisma.order, "findMany", async () => {
+    calls += 1;
+    await new Promise(resolve => setTimeout(resolve, 20));
+    return [];
+  });
+  Reflect.set(prisma, "$transaction", async () => false);
+  t.after(() => {
+    Reflect.set(prisma.order, "findMany", orders);
+    Reflect.set(prisma, "$transaction", transaction);
+  });
+  const [first, second] = await Promise.all([expireUnpaidOrders(), expireUnpaidOrders()]);
+  assert.equal(first, 0);
+  assert.equal(second, 0);
+  assert.equal(calls, 1);
 });
 
 test("bounded workers stop at an empty batch and never exceed the cap", async () => {
