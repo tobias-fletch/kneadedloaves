@@ -4,6 +4,7 @@ import Link from "next/link";
 import { UserRound } from "lucide-react";
 import { CartDrawerButton } from "@/components/CartDrawerButton";
 import { CloudflareAnalytics } from "@/components/CloudflareAnalytics";
+import { googleSiteVerification } from "@/lib/cloudflare-analytics";
 import { ContactFooter } from "@/components/ContactFooter";
 import { InlineAdminPanel } from "@/components/InlineAdminPanel";
 import "./globals.css";
@@ -13,6 +14,8 @@ import { getContactDetails } from "@/lib/contact";
 import { getManualPaymentConfig } from "@/lib/manual-payment-config";
 import { storefrontCheckoutAccess } from "@/lib/storefront-ordering";
 import { prisma } from "@/lib/prisma";
+
+const searchConsoleVerification = googleSiteVerification();
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://kneadedloaves.com"),
@@ -27,7 +30,8 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image"
-  }
+  },
+  ...(searchConsoleVerification ? { verification: { google: searchConsoleVerification } } : {})
 };
 
 export const viewport: Viewport = {

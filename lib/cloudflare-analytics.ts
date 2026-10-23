@@ -9,3 +9,12 @@ export function cloudflareAnalyticsToken(value: string | null | undefined = proc
   const token = value?.trim() ?? "";
   return /^[A-Za-z0-9]{16,64}$/.test(token) ? token : null;
 }
+
+/**
+ * Google Search Console URL-prefix verification (HTML tag method). Public value.
+ * The meta tag renders only when NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION is set.
+ */
+export function googleSiteVerification(value: string | null | undefined = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION) {
+  const token = value?.trim() ?? "";
+  return /^[A-Za-z0-9_-]{10,100}$/.test(token) ? token : null;
+}

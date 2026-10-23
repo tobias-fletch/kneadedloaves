@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import robots from "../app/robots";
 import sitemap from "../app/sitemap";
 import { CloudflareAnalytics } from "../components/CloudflareAnalytics";
-import { cloudflareAnalyticsToken } from "../lib/cloudflare-analytics";
+import { cloudflareAnalyticsToken, googleSiteVerification } from "../lib/cloudflare-analytics";
 import { bakeryJsonLd } from "../lib/site";
 
 function withToken(t: test.TestContext, value: string | undefined) {
@@ -55,4 +55,11 @@ test("Bakery JSON-LD uses only public facts", () => {
   assert.equal(data.address.postalCode, "11217");
   assert.ok(!("streetAddress" in data.address));
   assert.ok(!("openingHours" in data) && !("priceRange" in data) && !("telephone" in data));
+});
+
+test("Search Console verification value is optional and validated", () => {
+  assert.equal(googleSiteVerification(undefined), null);
+  assert.equal(googleSiteVerification(""), null);
+  assert.equal(googleSiteVerification('x" onload="y'), null);
+  assert.equal(googleSiteVerification("AbC-123_xyzAbC-123_xyz"), "AbC-123_xyzAbC-123_xyz");
 });
