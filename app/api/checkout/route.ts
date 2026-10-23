@@ -12,6 +12,7 @@ import { processOrderEmails } from "@/lib/email-maintenance";
 import { getManualPaymentConfig } from "@/lib/manual-payment-config";
 import { expireUnpaidOrders } from "@/lib/manual-payments";
 import { formatMoney } from "@/lib/money";
+import { deliveryCoverageError } from "@/lib/delivery-zone";
 import { describePickup } from "@/lib/pickup-location";
 import { checkoutDigest as digest, checkoutOwnerHash, checkoutOwners, checkoutRequestHash, lockCheckoutRequest, receiptForOwnedAttempt, validCheckoutKey } from "@/lib/checkout-recovery";
 export async function POST(request: Request) {
@@ -57,8 +58,9 @@ export async function POST(request: Request) {
       if (!lockedCart?.items.length) throw new Error("Your cart is empty.");
       const zone = parsed.data.fulfillmentType === "DELIVERY" && parsed.data.deliveryZoneId ? await tx.deliveryZone.findUnique({ where: { id: parsed.data.deliveryZoneId } }) : null;
       const pickup = parsed.data.fulfillmentType === "PICKUP" && parsed.data.pickupLocationId ? await tx.pickupLocation.findUnique({ where: { id: parsed.data.pickupLocationId } }) : null;
-      // A zone with no ZIP codes is a catch-all: it covers any delivery ZIP at its fee.
-      if (parsed.data.fulfillmentType === "DELIVERY" && (!zone?.active || (zone.zipCodes.length > 0 && !zone.zipCodes.includes(parsed.data.deliveryZip || "")))) throw new Error("Choose an active delivery zone covering your ZIP code.");
+      // An inactive zone covers no ZIP, including a catch-all whose zipCodes array is empty.
+      const deliveryError = deliveryCoverageError(zone, parsed.data.deliveryZip || "");
+      if (parsed.data.fulfillmentType === "DELIVERY" && deliveryError) throw new Error(deliveryError);
       if (parsed.data.fulfillmentType === "PICKUP" && !pickup?.active) throw new Error("Choose an active pickup location.");
       const deliveryFeeCents = zone?.feeCents || 0;
       const totalCents = lockedCart.items.reduce((sum,item) => sum + item.product.priceCents * item.quantity, deliveryFeeCents);

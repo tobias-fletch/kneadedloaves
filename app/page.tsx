@@ -3,7 +3,7 @@ import { format } from "date-fns";
 import { AddToCartButton } from "@/components/AddToCartButton";
 import { DatabaseSetup, databaseErrorMessage } from "@/components/DatabaseSetup";
 import { GlutenFreeNote } from "@/components/GlutenFreeNote";
-import { OrderingBadge, OrderingUnavailableNotice, PickupAreaNote } from "@/components/OrderingStatus";
+import { AlternateFulfillmentNote, OrderingBadge, OrderingUnavailableNotice, PickupAreaNote } from "@/components/OrderingStatus";
 import { prisma } from "@/lib/prisma";
 import { getStorefrontOrderingState } from "@/lib/storefront-ordering";
 import { formatMoney } from "@/lib/money";
@@ -46,6 +46,7 @@ export default async function HomePage() {
                     ? `Next opens: ${format(nextWindow.opensAt, "MMM d, h:mm a")}`
                     : "Next window coming soon"}
               </p>
+              {openWindow ? <AlternateFulfillmentNote day={format(openWindow.fulfillmentDate, "EEEE")} email={contact.email} /> : null}
               <PickupAreaNote />
             </div>
           </div>

@@ -1,5 +1,5 @@
 import React from "react";
-import { ORDERING_UNAVAILABLE_MESSAGE } from "@/lib/config-messages";
+import { ALTERNATE_FULFILLMENT_NOTE, ORDERING_UNAVAILABLE_MESSAGE } from "@/lib/config-messages";
 import { PICKUP_AREA } from "@/lib/pickup-location";
 
 export function OrderingBadge({ orderingOpen, unavailable }: { orderingOpen: boolean; unavailable: boolean }) {
@@ -19,6 +19,18 @@ export function OrderingUnavailableNotice({ email }: { email?: string | null }) 
         </p>
       ) : null}
     </div>
+  );
+}
+
+export function AlternateFulfillmentNote({ day, email }: { day: string; email?: string | null }) {
+  const contact = email?.trim() ?? "";
+  const [before, after] = ALTERNATE_FULFILLMENT_NOTE.replace("{day}", day).split("Email us");
+  return (
+    <p className="mt-2 text-sm font-medium text-ink/80">
+      {before}
+      {contact ? <a className="font-black underline" href={`mailto:${contact}`}>Email us</a> : "Email us"}
+      {after}
+    </p>
   );
 }
 
