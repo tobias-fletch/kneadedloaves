@@ -1,18 +1,19 @@
 import { NextResponse } from "next/server";
-import { BAKERY_CONTACT_EMAIL } from "@/lib/config-messages";
 import {
+  CONTACT_IP_LIMITS,
+  CONTACT_MAILBOX,
+  CONTACT_MIN_FILL_MS,
   claimDailyConfirmation,
   contactDeliveryMode,
   contactMessageSchema,
-  contactNotificationEmail,
   deliverContactMessage,
   type OutgoingMail
 } from "@/lib/contact-message";
-import { smtpTransport } from "@/lib/email-queue";
-import { buildMailtoUrl } from "@/lib/mailto";
+import { mailboxAddress, smtpTransport } from "@/lib/email-queue";
 import { rateLimit, readJson } from "@/lib/request";
 
-const FALLBACK_MAILTO = buildMailtoUrl({ to: BAKERY_CONTACT_EMAIL, subject: "Question for Kneaded Loaves" });
+/** Plain-text fallback shown in error messages. Never a mailto link. */
+const EMAIL_FALLBACK = `You can also email us at ${CONTACT_MAILBOX}.`;
 
 export type ContactRouteDeps = {
   env?: Record<string, string | undefined>;
@@ -28,18 +29,40 @@ async function defaultTransport() {
   return { from, sendMail: (mail: OutgoingMail) => transport.sendMail(mail) };
 }
 
+/**
+ * Client IP for the per-IP contact limits. Vercel overwrites X-Forwarded-For with the
+ * real client address, so it is trusted there (VERCEL=1) or when TRUST_PROXY=true.
+ * Anywhere else every visitor shares one bucket, as the rest of the site does.
+ */
+export function contactClientIp(request: Request, env: Record<string, string | undefined> = process.env) {
+  if (env.VERCEL !== "1" && env.TRUST_PROXY !== "true") return "shared";
+  const forwarded = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return forwarded || request.headers.get("x-real-ip")?.trim() || "shared";
+}
+
+/** True when the form was submitted implausibly fast (or without a start time), which bots do. */
+export function submittedTooFast(startedAt: unknown, now: number) {
+  const started = typeof startedAt === "number" ? startedAt : typeof startedAt === "string" ? Number(startedAt) : NaN;
+  if (!Number.isFinite(started)) return true;
+  return now - started < CONTACT_MIN_FILL_MS;
+}
+
 export async function handleContactPost(request: Request, deps: ContactRouteDeps = {}) {
   const env = deps.env ?? process.env;
   const limit = deps.limit ?? rateLimit;
-  if (!await limit(request, "contact", 10)) {
-    return NextResponse.json({ error: "Too many messages right now. Please try again in about 10 minutes, or email us directly.", mailtoUrl: FALLBACK_MAILTO }, { status: 429 });
+  const now = deps.now?.() ?? new Date();
+  const ip = contactClientIp(request, env);
+  for (const { scope, limit: max, windowMs } of CONTACT_IP_LIMITS) {
+    if (!await limit(request, scope, max, `ip:${ip}`, windowMs)) {
+      const when = windowMs > 60 * 60 * 1000 ? "tomorrow" : "in about an hour";
+      return NextResponse.json({ error: `Too many messages from this connection. Please try again ${when}. ${EMAIL_FALLBACK}` }, { status: 429 });
+    }
   }
 
   const raw = await readJson(request);
   const parsed = contactMessageSchema.safeParse({
     name: typeof raw.name === "string" ? raw.name : "",
     email: typeof raw.email === "string" ? raw.email : "",
-    phone: typeof raw.phone === "string" ? raw.phone : undefined,
     message: typeof raw.message === "string" ? raw.message : "",
     website: typeof raw.website === "string" ? raw.website : undefined
   });
@@ -48,41 +71,40 @@ export async function handleContactPost(request: Request, deps: ContactRouteDeps
     return NextResponse.json({ error: "Please check the highlighted fields.", fieldErrors }, { status: 400 });
   }
 
-  // Honeypot filled: pretend success so bots learn nothing, and send nothing.
-  if (parsed.data.website.trim()) return NextResponse.json({ ok: true });
+  // Honeypot filled or submitted too fast: quiet success so bots learn nothing, and send nothing.
+  if (parsed.data.website.trim() || submittedTooFast(raw.startedAt, now.getTime())) return NextResponse.json({ ok: true });
 
   if (!await limit(request, "contact-sender", 3, parsed.data.email.toLowerCase())) {
-    return NextResponse.json({ error: "We've already received a few messages from this address. Please try again in about 10 minutes.", mailtoUrl: FALLBACK_MAILTO }, { status: 429 });
+    return NextResponse.json({ error: `We've already received a few messages from this address. Please try again in about 10 minutes. ${EMAIL_FALLBACK}` }, { status: 429 });
   }
 
   const mode = contactDeliveryMode(env);
-  let configuredFrom: string | undefined;
   let sendMail: ((mail: OutgoingMail) => Promise<unknown>) | undefined;
   if (mode === "live") {
     try {
       const transport = await (deps.transport ?? defaultTransport)();
-      configuredFrom = transport.from;
+      // Contact mail must go out from the bakery's own Gmail account, never another mailbox.
+      if (mailboxAddress(transport.from).toLowerCase() !== CONTACT_MAILBOX) throw new Error("Sender mailbox mismatch.");
       sendMail = transport.sendMail;
     } catch {
-      console.error("[contact] SMTP is not configured; cannot send.");
-      return NextResponse.json({ error: "Our email is having a moment. Please email us directly instead.", mailtoUrl: FALLBACK_MAILTO }, { status: 503 });
+      console.error(`[contact] SMTP is not configured to send from ${CONTACT_MAILBOX}; cannot send.`);
+      return NextResponse.json({ error: `Our email is having a moment. ${EMAIL_FALLBACK}` }, { status: 503 });
     }
   } else {
-    (deps.log ?? console.info)(`[contact] Dry-run mode (VERCEL_ENV=${env.VERCEL_ENV ?? "unset"}); emails are logged, not sent. Set CONTACT_LIVE_SEND=true to send.`);
+    (deps.log ?? console.info)(`[contact] Dry-run mode (VERCEL_ENV=${env.VERCEL_ENV ?? "unset"}); emails are logged, not sent. Live sending needs VERCEL_ENV=production and CONTACT_LIVE_SEND=true.`);
   }
 
   const claim = deps.claim ?? claimDailyConfirmation;
   const result = await deliverContactMessage(parsed.data, {
     mode,
-    notifyTo: contactNotificationEmail(env),
-    configuredFrom,
+    notifyTo: CONTACT_MAILBOX,
     sendMail,
-    claimConfirmation: (email, now) => claim(email, now, mode),
+    claimConfirmation: (email, at) => claim(email, at, mode),
     log: deps.log,
-    now: deps.now?.()
+    now
   });
   if (!result.ok) {
-    return NextResponse.json({ error: "Your message couldn't be sent just now. Please try again, or email us directly.", mailtoUrl: FALLBACK_MAILTO }, { status: 503 });
+    return NextResponse.json({ error: `Your message couldn't be sent just now. Please try again. ${EMAIL_FALLBACK}` }, { status: 503 });
   }
   return NextResponse.json({ ok: true, confirmationSent: result.confirmationSent });
 }

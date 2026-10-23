@@ -38,11 +38,12 @@ test("contact page shows email only and never a phone hint or example.com addres
   stub(t, prisma.adminSettings, "findFirst", async () => ({ bakeryName: "Kneaded Loaves", notificationEmail: "orders@example.com", instagramHandle: "" }));
   const html = renderToStaticMarkup(await ContactPage());
   assert.match(html, /kneadedloaves@gmail\.com/);
-  assert.match(html, /mailto:kneadedloaves@gmail\.com/);
+  assert.doesNotMatch(html, /mailto:/, "the address is plain text, never a mailto link");
+  assert.match(html, /<form/);
   assert.doesNotMatch(html, /example\.com|555-0100|CONTACT_PHONE|Phone|tel:/);
 });
 
-test("CONTACT_EMAIL routes notifications but the public site keeps the bakery mailbox", async (t) => {
+test("CONTACT_EMAIL is never shown; the public site keeps the bakery mailbox", async (t) => {
   const previous = process.env.CONTACT_EMAIL;
   process.env.CONTACT_EMAIL = "owner-private@kneadedloaves.com";
   t.after(() => { if (previous === undefined) delete process.env.CONTACT_EMAIL; else process.env.CONTACT_EMAIL = previous; });
@@ -53,4 +54,21 @@ test("CONTACT_EMAIL routes notifications but the public site keeps the bakery ma
   const html = renderToStaticMarkup(await ContactPage());
   assert.match(html, /kneadedloaves@gmail\.com/);
   assert.doesNotMatch(html, /owner-private|someone-else/);
+});
+
+test("the site has no mailto: links; contact buttons and links go to /contact", async () => {
+  const { readdirSync, readFileSync, statSync } = await import("node:fs");
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const path = `${dir}/${name}`;
+      if (statSync(path).isDirectory()) walk(path);
+      else if (/\.(tsx?|mjs|js)$/.test(name)) files.push(path);
+    }
+  };
+  walk("app");
+  walk("components");
+  assert.ok(files.length > 20);
+  for (const file of files) assert.doesNotMatch(readFileSync(file, "utf8"), /mailto:/i, file);
+  assert.match(readFileSync("components/ContactFooter.tsx", "utf8"), /href="\/contact"/);
 });

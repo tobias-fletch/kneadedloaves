@@ -7,7 +7,7 @@ export const BAKERY_INSTAGRAM_HANDLE = "kneadedloaves";
 /** Temporary menu note ("for now"). Delete this and GlutenFreeNote to remove it. */
 export const GLUTEN_FREE_ON_REQUEST_NOTE = "Need it gluten-free? Any item on our menu can be made gluten-free on request. Made in a kitchen that also handles wheat, so we can't guarantee it's free of cross-contact. Just email us";
 
-/** {day} is the fulfillment weekday. "Email us" is the public contact mailto. */
+/** {day} is the fulfillment weekday. "Email us" links to the /contact form. */
 export const ALTERNATE_FULFILLMENT_NOTE = "Can't make {day}? Email us to arrange another time.";
 
 /** Shown only to a signed-in admin when public ordering is off solely because of the three launch flags. */

@@ -1,23 +1,36 @@
 import { createHash } from "crypto";
 import { z } from "zod";
 import { BAKERY_CONTACT_EMAIL } from "@/lib/config-messages";
-import { publicContactEmail } from "@/lib/contact";
-import { mailboxAddress } from "@/lib/email-queue";
 import { prisma } from "@/lib/prisma";
 
 const EASTERN_TIME = "America/New_York";
 const SITE_NAME = "kneadedloaves.com";
 export const CONTACT_SENDER_NAME = "Kneaded Loaves";
 
-/** Field limits shared by the server route and the footer form. */
-export const CONTACT_LIMITS = { nameMax: 120, emailMax: 254, phoneMax: 40, messageMin: 10, messageMax: 5000 } as const;
+/** Field limits shared by the server route and the /contact form. */
+export const CONTACT_LIMITS = { nameMax: 120, emailMax: 254, messageMin: 10, messageMax: 5000 } as const;
+
+/** Submissions faster than this after the form rendered are treated as bots (quiet success, nothing sent). */
+export const CONTACT_MIN_FILL_MS = 3000;
+
+/** Per-IP limits, matching the shared contact relay: 5 an hour and 20 a day. */
+export const CONTACT_IP_LIMITS = [
+  { scope: "contact-ip-hour", limit: 5, windowMs: 60 * 60 * 1000 },
+  { scope: "contact-ip-day", limit: 20, windowMs: 24 * 60 * 60 * 1000 }
+] as const;
+
+/**
+ * Every contact-form notification goes to the bakery mailbox, and every email the form
+ * sends comes from it. This is deliberately not configurable (Kneaded Loaves is the only
+ * site whose contact form uses kneadedloaves@gmail.com).
+ */
+export const CONTACT_MAILBOX = BAKERY_CONTACT_EMAIL;
 
 const singleLine = (value: string) => value.replace(/[\r\n\t]+/g, " ").replace(/\s{2,}/g, " ").trim();
 
 export const contactMessageSchema = z.object({
   name: z.string().transform(singleLine).pipe(z.string().min(1, "Please tell us your name.").max(CONTACT_LIMITS.nameMax, "That name is a little long.")),
   email: z.string().trim().max(CONTACT_LIMITS.emailMax).email("Please enter a valid email address."),
-  phone: z.string().transform(singleLine).pipe(z.string().max(CONTACT_LIMITS.phoneMax)).optional().default(""),
   message: z.string().trim().min(CONTACT_LIMITS.messageMin, `Please write at least ${CONTACT_LIMITS.messageMin} characters.`).max(CONTACT_LIMITS.messageMax, `Please keep it under ${CONTACT_LIMITS.messageMax} characters.`),
   /** Honeypot: hidden from people, often filled in by bots. */
   website: z.string().optional().default("")
@@ -40,21 +53,15 @@ export function easternDateKey(value: Date) {
   return new Intl.DateTimeFormat("en-CA", { timeZone: EASTERN_TIME, year: "numeric", month: "2-digit", day: "2-digit" }).format(value);
 }
 
-/** Where owner notifications go: CONTACT_EMAIL when it is a real address, else the bakery mailbox. Never shown publicly. */
-export function contactNotificationEmail(env: Record<string, string | undefined> = process.env) {
-  return publicContactEmail(env.CONTACT_EMAIL) || BAKERY_CONTACT_EMAIL;
-}
-
 /**
- * Real email only leaves from the production deployment. Preview, development and
- * any non-Vercel runtime log instead, unless CONTACT_LIVE_SEND=true is set.
- * CONTACT_LIVE_SEND=false is a kill switch that forces dry-run even in production.
+ * Real email leaves only from the production deployment AND only when
+ * CONTACT_LIVE_SEND=true is set there. Everything else (preview, development,
+ * local, production with the flag unset or any other value) is a dry run that
+ * logs one masked line and sends nothing.
  */
 export function contactDeliveryMode(env: Record<string, string | undefined> = process.env): "live" | "dry-run" {
   const flag = env.CONTACT_LIVE_SEND?.trim().toLowerCase();
-  if (flag === "false") return "dry-run";
-  if (flag === "true") return "live";
-  return env.VERCEL_ENV === "production" ? "live" : "dry-run";
+  return env.VERCEL_ENV === "production" && flag === "true" ? "live" : "dry-run";
 }
 
 export function buildOwnerNotification(input: ContactMessage, submittedAt: Date, options: { from: string; to: string }): OutgoingMail {
@@ -63,7 +70,6 @@ export function buildOwnerNotification(input: ContactMessage, submittedAt: Date,
     "",
     `Name: ${input.name}`,
     `Email: ${input.email}`,
-    ...(input.phone ? [`Phone: ${input.phone}`] : []),
     `Sent: ${formatContactTimestamp(submittedAt)}`,
     "",
     "Message:",
@@ -128,8 +134,6 @@ export async function claimDailyConfirmation(
 export type ContactDeliveryDeps = {
   mode: "live" | "dry-run";
   notifyTo: string;
-  /** Configured EMAIL_FROM (must be the SMTP mailbox for Gmail). Only needed in live mode. */
-  configuredFrom?: string;
   sendMail?: (mail: OutgoingMail) => Promise<unknown>;
   claimConfirmation: (email: string, now: Date) => Promise<boolean>;
   log?: (message: string) => void;
@@ -142,7 +146,7 @@ export type ContactDeliveryResult = { ok: true; confirmationSent: boolean; dryRu
 export async function deliverContactMessage(input: ContactMessage, deps: ContactDeliveryDeps): Promise<ContactDeliveryResult> {
   const now = deps.now ?? new Date();
   const log = deps.log ?? ((message: string) => console.info(message));
-  const mailbox = deps.configuredFrom ? mailboxAddress(deps.configuredFrom) : BAKERY_CONTACT_EMAIL;
+  const mailbox = CONTACT_MAILBOX;
   const from = `${CONTACT_SENDER_NAME} <${mailbox}>`;
   const dryRun = deps.mode !== "live";
   const send = async (kind: string, mail: OutgoingMail) => {
