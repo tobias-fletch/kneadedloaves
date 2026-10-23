@@ -6,13 +6,13 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { GlutenFreeNote } from "../components/GlutenFreeNote";
 import { BAKERY_CONTACT_EMAIL, GLUTEN_FREE_ON_REQUEST_NOTE } from "../lib/config-messages";
 
-test("menu gluten-free note asks customers to email and makes no extra claims", () => {
+test("menu gluten-free note includes the cross-contact sentence and the public email", () => {
   const html = renderToStaticMarkup(createElement(GlutenFreeNote, { email: BAKERY_CONTACT_EMAIL }));
-  assert.match(html, /Need it gluten-free\? Any item on our menu can be made gluten-free on request\. Just email us at /);
+  const apostrophe = "(?:'|&#x27;)";
+  assert.match(html, new RegExp(`Need it gluten-free\\? Any item on our menu can be made gluten-free on request\\. Made in a kitchen that also handles wheat, so we can${apostrophe}t guarantee it${apostrophe}s free of cross-contact\\. Just email us at `));
   assert.match(html, new RegExp(`mailto:${BAKERY_CONTACT_EMAIL.replace(".", "\\.")}`));
-  assert.match(html, new RegExp(`${BAKERY_CONTACT_EMAIL.replace(".", "\\.")}`));
-  assert.equal(GLUTEN_FREE_ON_REQUEST_NOTE, "Need it gluten-free? Any item on our menu can be made gluten-free on request. Just email us");
-  assert.doesNotMatch(html, /celiac|certified|100%|guarantee|cross-contact|wheat/i);
+  assert.equal(GLUTEN_FREE_ON_REQUEST_NOTE, "Need it gluten-free? Any item on our menu can be made gluten-free on request. Made in a kitchen that also handles wheat, so we can't guarantee it's free of cross-contact. Just email us");
+  assert.doesNotMatch(html, /celiac|certified|100%/i);
 });
 
 test("the gluten-free note is only on the homepage menu", () => {

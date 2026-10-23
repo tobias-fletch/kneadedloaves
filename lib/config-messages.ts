@@ -4,4 +4,4 @@ export const ORDERING_UNAVAILABLE_MESSAGE = "Online ordering isn't available rig
 export const BAKERY_CONTACT_EMAIL = "kneadedloaves@gmail.com";
 
 /** Temporary menu note ("for now"). Delete this and GlutenFreeNote to remove it. */
-export const GLUTEN_FREE_ON_REQUEST_NOTE = "Need it gluten-free? Any item on our menu can be made gluten-free on request. Just email us";
+export const GLUTEN_FREE_ON_REQUEST_NOTE = "Need it gluten-free? Any item on our menu can be made gluten-free on request. Made in a kitchen that also handles wheat, so we can't guarantee it's free of cross-contact. Just email us";
