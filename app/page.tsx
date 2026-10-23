@@ -2,6 +2,7 @@ import { MenuProductImage } from "@/components/MenuProductImage";
 import { format } from "date-fns";
 import { AddToCartButton } from "@/components/AddToCartButton";
 import { DatabaseSetup, databaseErrorMessage } from "@/components/DatabaseSetup";
+import { GlutenFreeNote } from "@/components/GlutenFreeNote";
 import { OrderingBadge, OrderingUnavailableNotice, PickupAreaNote } from "@/components/OrderingStatus";
 import { prisma } from "@/lib/prisma";
 import { getStorefrontOrderingState } from "@/lib/storefront-ordering";
@@ -68,6 +69,7 @@ export default async function HomePage() {
                 </p>
               )}
               <PickupAreaNote />
+              <GlutenFreeNote email={contact.email} />
             </div>
           </div>
         </div>
