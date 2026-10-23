@@ -42,12 +42,15 @@ test("contact page shows email only and never a phone hint or example.com addres
   assert.doesNotMatch(html, /example\.com|555-0100|CONTACT_PHONE|Phone|tel:/);
 });
 
-test("CONTACT_EMAIL overrides the default bakery mailbox", async (t) => {
+test("CONTACT_EMAIL routes notifications but the public site keeps the bakery mailbox", async (t) => {
   const previous = process.env.CONTACT_EMAIL;
-  process.env.CONTACT_EMAIL = "hello@kneadedloaves.com";
+  process.env.CONTACT_EMAIL = "owner-private@kneadedloaves.com";
   t.after(() => { if (previous === undefined) delete process.env.CONTACT_EMAIL; else process.env.CONTACT_EMAIL = previous; });
-  stub(t, prisma.adminSettings, "findFirst", async () => null);
-  assert.equal((await getContactDetails()).email, "hello@kneadedloaves.com");
+  stub(t, prisma.adminSettings, "findFirst", async () => ({ bakeryName: "Kneaded Loaves", notificationEmail: "someone-else@kneadedloaves.com", instagramHandle: "" }));
+  assert.equal((await getContactDetails()).email, "kneadedloaves@gmail.com");
   assert.equal((await getContactDetails()).phone, "");
   assert.equal((await getContactDetails()).phoneHref, "");
+  const html = renderToStaticMarkup(await ContactPage());
+  assert.match(html, /kneadedloaves@gmail\.com/);
+  assert.doesNotMatch(html, /owner-private|someone-else/);
 });
