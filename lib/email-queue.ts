@@ -29,6 +29,8 @@ export function mailerSettings(config: { SMTP_HOST: string; SMTP_PORT: string; S
     throw new Error("Gmail requires the EMAIL_FROM address to match SMTP_USER.");
   }
   const secure = port === 465;
+  const password = host === "smtp.gmail.com" ? config.SMTP_PASSWORD.replace(/\s+/g, "") : config.SMTP_PASSWORD;
+  if (!password) throw new Error("SMTP configuration is incomplete.");
   return {
     from: config.EMAIL_FROM.trim(),
     options: {
@@ -36,7 +38,7 @@ export function mailerSettings(config: { SMTP_HOST: string; SMTP_PORT: string; S
       port,
       secure,
       requireTLS: !secure,
-      auth: { user: config.SMTP_USER, pass: config.SMTP_PASSWORD },
+      auth: { user: config.SMTP_USER, pass: password },
       connectionTimeout: 10000,
       socketTimeout: 30000,
       disableFileAccess: true,
@@ -49,6 +51,12 @@ export async function smtpTransport() {
   const config = await getAppConfigValues(["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM"]);
   const settings = mailerSettings(config);
   return { from: settings.from, transport: nodemailer.createTransport(settings.options) };
+}
+
+export async function verifySmtpConnection(config: { SMTP_HOST: string; SMTP_PORT: string; SMTP_USER: string; SMTP_PASSWORD: string; EMAIL_FROM: string }, createTransport: (options: object) => { verify: () => Promise<unknown> } = nodemailer.createTransport) {
+  const settings = mailerSettings(config);
+  await createTransport(settings.options).verify();
+  return { ok: true as const };
 }
 
 export function emailJobIsClaimable(job: { status: string; availableAt: Date; lockedUntil: Date | null; attempts: number }, now = new Date()) {

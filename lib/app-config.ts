@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { UNDECRYPTABLE_SETTING_MESSAGE } from "@/lib/config-messages";
-import { decryptSecret } from "@/lib/secrets";
+import { configEncryptionKeyStatus, decryptSecret } from "@/lib/secrets";
 import { prisma } from "@/lib/prisma";
 
 export const setupConfigFields = [
@@ -81,6 +81,7 @@ export async function getSetupConfigSummary() {
   const saved = await prisma.appConfig.findMany({ where: { key: { in: [...setupConfigKeys] } } }).catch(() => []);
   const savedByKey = new Map(saved.map((item) => [item.key, item]));
 
+  const encryptionKeyValid = configEncryptionKeyStatus().valid;
   return setupConfigFields.map((field) => {
     const savedItem = savedByKey.get(field.key);
     const envValue = process.env[field.key]?.trim() || "";
@@ -93,6 +94,7 @@ export async function getSetupConfigSummary() {
       savedInAdmin: Boolean(savedValue),
       envConfigured: Boolean(envValue),
       undecryptable: read.undecryptable,
+      encryptionKeyValid,
       value: field.secret ? "" : value
     };
   });

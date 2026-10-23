@@ -1,7 +1,8 @@
 import { readAppConfig } from "@/lib/app-config";
-import { UNDECRYPTABLE_SETTING_MESSAGE } from "@/lib/config-messages";
+import { ENCRYPTION_KEY_MISCONFIGURED_MESSAGE, UNDECRYPTABLE_SETTING_MESSAGE } from "@/lib/config-messages";
 import { paymentConfigKeys, paymentReadiness } from "@/lib/manual-payment-config";
 import { prisma } from "@/lib/prisma";
+import { configEncryptionKeyStatus } from "@/lib/secrets";
 
 type SetupItem = {
   id: string;
@@ -200,6 +201,17 @@ export async function getSetupChecklist() {
       complete: jwtSecret.length >= 32 && !/development|replace-with|change-me/i.test(jwtSecret)
     }
   ];
+
+  if (!configEncryptionKeyStatus().valid) {
+    items.push({
+      id: "encryption-key",
+      group: "Launch",
+      title: "Fix the server encryption key",
+      detail: `${ENCRYPTION_KEY_MISCONFIGURED_MESSAGE} Secret setup fields need a Vercel environment variable until the key is valid.`,
+      href: "/admin/setup",
+      complete: false
+    });
+  }
 
   if (configRead.undecryptable.length) {
     items.push({
