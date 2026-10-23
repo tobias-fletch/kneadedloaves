@@ -87,7 +87,7 @@ test("email claims stay idempotent and order filters do not treat underscores as
   const queue = readFileSync(new URL("../lib/email-queue.ts", import.meta.url), "utf8");
   assert.match(queue, /update:\s*\{\s*\}/);
   assert.match(queue, /FOR UPDATE SKIP LOCKED LIMIT 1/);
-  assert.match(queue, /ESCAPE '\\'/);
+  assert.match(queue, /dedupeKey" LIKE \$\{like\} ESCAPE '\\\\'/);
 });
 
 test("bounded workers stop at an empty batch and never exceed the cap", async () => {
