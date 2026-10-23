@@ -36,11 +36,21 @@ export async function expireOrder(tx: Prisma.TransactionClient, id: string, now 
   await queueEmail({ dedupeKey: `expired:${id}`, to: order.customerEmail, subject: "Your bakery reservation expired", body: `Reservation ${order.paymentReference} expired before payment was verified. Do not send a new payment. If you already paid, keep your receipt and contact the bakery for reconciliation. Your order is not scheduled for fulfillment.` }, tx);
   return true;
 }
-export async function expireUnpaidOrders(now = new Date()) {
+async function expireUnpaidOrdersOnce(now: Date) {
   const due = await prisma.order.findMany({ where: { paymentMethod: "VENMO", status: "PENDING", paymentDueAt: { lte: now }, paymentState: { not: "VERIFIED" } }, select: { id: true }, take: 100, orderBy: { paymentDueAt: "asc" } });
   let expired = 0;
   for (const order of due) if (await prisma.$transaction(tx => expireOrder(tx, order.id, now))) expired++;
   return expired;
+}
+let expiryInFlight: Promise<number> | null = null;
+export function expireUnpaidOrders(now = new Date()) {
+  if (!expiryInFlight) {
+    const run = expireUnpaidOrdersOnce(now).finally(() => {
+      if (expiryInFlight === run) expiryInFlight = null;
+    });
+    expiryInFlight = run;
+  }
+  return expiryInFlight;
 }
 export async function recordPaymentEvidence(tx: Prisma.TransactionClient, id: string, input: z.infer<typeof paymentEvidenceSchema>, actorId: string, now?: Date) {
   input = paymentEvidenceSchema.parse(input);
