@@ -68,7 +68,7 @@ export function CheckoutForm({ deliveryZones, pickupLocations, framed = true, ha
   if (!hasCartItems && phase === "ready" && !hasSavedAttempt) return null;
   return <form onSubmit={event => { event.preventDefault(); void submit(new FormData(event.currentTarget)); }} className={`${framed ? "panel p-4" : "border-t-2 border-ink pt-4"} space-y-4`}>
     {adminTestMode || adminSetupReasons.length > 0 ? <AdminOrderingBanner testMode={adminTestMode} reasons={adminSetupReasons} /> : null}
-    {!checkoutReady && adminSetupReasons.length === 0 ? <p className="border-2 border-ink bg-jam p-3 text-sm font-black" role="status">{ORDERING_UNAVAILABLE_MESSAGE}{contactEmail ? <> <Link className="underline" href="/contact">Send us a message</Link> or email {contactEmail}.</> : null}</p> : null}
+    {!checkoutReady && adminSetupReasons.length === 0 ? <p className="border-2 border-ink bg-jam p-3 text-sm font-black" role="status">{ORDERING_UNAVAILABLE_MESSAGE}{contactEmail ? <> Email <a className="underline" href={`mailto:${contactEmail}`}>{contactEmail}</a>.</> : null}</p> : null}
     {hasCartItems ? <fieldset disabled={phase !== "ready" || !checkoutReady} className="space-y-4">
       <h2 className="font-display text-2xl uppercase tracking-wide">Checkout</h2>
       {showSignInNudge ? <p className="flex items-start justify-between gap-3 border-2 border-ink bg-crumb p-3 text-sm font-medium"><span>Have an account? <Link href="/login" className="font-black underline">Sign in</Link> to link this order to it. Checkout works fine as a guest.</span><button type="button" aria-label="Dismiss" onClick={() => setShowSignInNudge(false)} className="shrink-0 px-1 text-lg font-black">&times;</button></p> : null}

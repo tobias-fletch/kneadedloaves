@@ -47,16 +47,11 @@ export function resolvePublicContactEmail(...candidates: Array<string | null | u
   return BAKERY_CONTACT_EMAIL;
 }
 
-/**
- * The public site always shows the bakery mailbox. CONTACT_EMAIL is only where
- * contact-form notifications are delivered (see contactNotificationEmail) and is
- * never rendered, so a personal inbox can be used there without exposing it.
- */
 export async function getContactDetails(): Promise<ContactDetails> {
   const settings = await prisma.adminSettings.findFirst().catch(() => null);
   return {
     bakeryName: settings?.bakeryName ?? "Kneaded Loaves",
-    email: BAKERY_CONTACT_EMAIL,
+    email: resolvePublicContactEmail(process.env.CONTACT_EMAIL, settings?.notificationEmail, process.env.EMAIL_FROM),
     phone: "",
     phoneHref: "",
     instagramHandle: normalizeInstagramHandle(settings?.instagramHandle)

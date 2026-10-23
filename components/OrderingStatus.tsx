@@ -1,4 +1,3 @@
-import Link from "next/link";
 import React from "react";
 import { ADMIN_CHECKOUT_BLOCKED_LEAD, ADMIN_TEST_MODE_BANNER, ALTERNATE_FULFILLMENT_NOTE, ORDERING_UNAVAILABLE_MESSAGE } from "@/lib/config-messages";
 import { PICKUP_AREA } from "@/lib/pickup-location";
@@ -32,7 +31,7 @@ export function OrderingUnavailableNotice({ email }: { email?: string | null }) 
       <p className="text-sm font-bold uppercase tracking-widest text-ink/70">{ORDERING_UNAVAILABLE_MESSAGE}</p>
       {contact ? (
         <p className="mt-1 text-sm font-medium text-ink/80">
-          <Link className="font-black underline" href="/contact">Send us a message</Link> or email {contact}.
+          Email <a className="font-black underline" href={`mailto:${contact}`}>{contact}</a>.
         </p>
       ) : null}
     </div>
@@ -45,7 +44,7 @@ export function AlternateFulfillmentNote({ day, email }: { day: string; email?: 
   return (
     <p className="mt-2 text-sm font-medium text-ink/80">
       {before}
-      {contact ? <Link className="font-black underline" href="/contact">Email us</Link> : "Email us"}
+      {contact ? <a className="font-black underline" href={`mailto:${contact}`}>Email us</a> : "Email us"}
       {after}
     </p>
   );

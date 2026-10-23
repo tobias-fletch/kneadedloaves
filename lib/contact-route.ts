@@ -10,14 +10,15 @@ import {
   type OutgoingMail
 } from "@/lib/contact-message";
 import { mailboxAddress, smtpTransport } from "@/lib/email-queue";
-import { rateLimit, readJson } from "@/lib/request";
+import { readJson } from "@/lib/request";
+import { contactRateLimit } from "@/lib/contact-rate-limit";
 
 /** Plain-text fallback shown in error messages. Never a mailto link. */
 const EMAIL_FALLBACK = `You can also email us at ${CONTACT_MAILBOX}.`;
 
 export type ContactRouteDeps = {
   env?: Record<string, string | undefined>;
-  limit?: typeof rateLimit;
+  limit?: typeof contactRateLimit;
   transport?: () => Promise<{ from: string; sendMail: (mail: OutgoingMail) => Promise<unknown> }>;
   claim?: typeof claimDailyConfirmation;
   log?: (message: string) => void;
@@ -49,7 +50,7 @@ export function submittedTooFast(startedAt: unknown, now: number) {
 
 export async function handleContactPost(request: Request, deps: ContactRouteDeps = {}) {
   const env = deps.env ?? process.env;
-  const limit = deps.limit ?? rateLimit;
+  const limit = deps.limit ?? contactRateLimit;
   const now = deps.now?.() ?? new Date();
   const ip = contactClientIp(request, env);
   for (const { scope, limit: max, windowMs } of CONTACT_IP_LIMITS) {
@@ -74,7 +75,7 @@ export async function handleContactPost(request: Request, deps: ContactRouteDeps
   // Honeypot filled or submitted too fast: quiet success so bots learn nothing, and send nothing.
   if (parsed.data.website.trim() || submittedTooFast(raw.startedAt, now.getTime())) return NextResponse.json({ ok: true });
 
-  if (!await limit(request, "contact-sender", 3, parsed.data.email.toLowerCase())) {
+  if (!await limit(request, "contact-sender", 3, parsed.data.email.toLowerCase(), 600_000)) {
     return NextResponse.json({ error: `We've already received a few messages from this address. Please try again in about 10 minutes. ${EMAIL_FALLBACK}` }, { status: 429 });
   }
 

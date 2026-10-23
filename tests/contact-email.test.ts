@@ -311,3 +311,30 @@ test("the /contact form has name, email, message and a hidden honeypot, and no m
   assert.match(html, /aria-hidden="true"[^>]*><label[^>]*>Website<\/label><input[^>]*tabindex="-1"/i);
   assert.doesNotMatch(html, /mailto:|name="phone"/);
 });
+
+test("contactRateLimit is contact-only: own key prefix, own window, fails closed", async (t) => {
+  const { prisma } = await import("../lib/prisma");
+  const { contactRateLimit } = await import("../lib/contact-rate-limit");
+  const counts = new Map<string, number>();
+  const expiries: number[] = [];
+  const delegate = prisma.rateLimit as unknown as Record<string, unknown>;
+  const original = Reflect.get(delegate, "upsert");
+  t.after(() => { Reflect.set(delegate, "upsert", original); });
+  Reflect.set(delegate, "upsert", (async ({ where, create }: { where: { key: string }; create: { expiresAt: Date } }) => {
+    const count = (counts.get(where.key) ?? 0) + 1;
+    counts.set(where.key, count);
+    expiries.push(create.expiresAt.getTime());
+    return { key: where.key, count, expiresAt: create.expiresAt };
+  }));
+  const now = Date.UTC(2026, 9, 23, 12, 30);
+  const req = new Request("https://kneadedloaves.com/api/contact");
+  const results: boolean[] = [];
+  for (let i = 0; i < 6; i += 1) results.push(await contactRateLimit(req, "contact-ip-hour", 5, "ip:203.0.113.7", 3_600_000, now));
+  assert.deepEqual(results, [true, true, true, true, true, false]);
+  assert.equal(await contactRateLimit(req, "contact-ip-day", 20, "ip:203.0.113.7", 86_400_000, now), true, "the day window has its own bucket");
+  assert.equal(expiries[0], Date.UTC(2026, 9, 23, 13, 0));
+  const { readFileSync } = await import("node:fs");
+  assert.doesNotMatch(readFileSync("lib/contact-route.ts", "utf8"), /\brateLimit\b/, "the contact route does not use the shared limiter");
+  Reflect.set(delegate, "upsert", async () => { throw new Error("db down"); });
+  assert.equal(await contactRateLimit(req, "contact-ip-hour", 5, "ip:x", 3_600_000, now), false);
+});

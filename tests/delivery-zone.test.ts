@@ -40,8 +40,7 @@ test("alternate fulfillment note uses the weekday and the public email", () => {
   assert.equal(ALTERNATE_FULFILLMENT_NOTE, "Can't make {day}? Email us to arrange another time.");
   assert.doesNotMatch(ALTERNATE_FULFILLMENT_NOTE, /Sunday/);
   assert.match(html, /Can(?:'|&#x27;)t make Sunday\? /);
-  assert.match(html, /<a[^>]*href="\/contact"[^>]*>Email us<\/a> to arrange another time\./);
-  assert.doesNotMatch(html, /mailto:/);
+  assert.match(html, new RegExp(`<a[^>]*href="mailto:${BAKERY_CONTACT_EMAIL}"[^>]*>Email us</a> to arrange another time\\.`));
   const page = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
   const fulfillment = page.indexOf("Fulfillment:");
   const note = page.indexOf("<AlternateFulfillmentNote ");
