@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Mail, MessageCircle, Send, X } from "lucide-react";
 import type { ContactDetails } from "@/lib/contact";
 import { buildMailtoUrl } from "@/lib/mailto";

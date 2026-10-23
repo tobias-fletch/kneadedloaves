@@ -1,5 +1,24 @@
-import { BAKERY_CONTACT_EMAIL } from "@/lib/config-messages";
+import { BAKERY_CONTACT_EMAIL, BAKERY_INSTAGRAM_HANDLE } from "@/lib/config-messages";
 import { prisma } from "@/lib/prisma";
+
+const INSTAGRAM_PROFILE_URL = /^(?:https?:\/\/)?(?:www\.|m\.)?instagram\.com\/@?([A-Za-z0-9._]{1,30})\/?(?:[?#].*)?$/i;
+const INSTAGRAM_HANDLE = /^[A-Za-z0-9._]{1,30}$/;
+
+/** Bare Instagram username. Empty admin values use the bakery account. @ and profile URLs are stripped so links stay on instagram.com. */
+export function normalizeInstagramHandle(value: string | null | undefined) {
+  const trimmed = value?.trim() ?? "";
+  if (!trimmed) return BAKERY_INSTAGRAM_HANDLE;
+
+  const fromProfileUrl = trimmed.match(INSTAGRAM_PROFILE_URL);
+  const handle = (fromProfileUrl ? fromProfileUrl[1] : trimmed.replace(/^@+/, "")).trim();
+  if (fromProfileUrl) return INSTAGRAM_HANDLE.test(handle) ? handle : BAKERY_INSTAGRAM_HANDLE;
+  if (/[/:]/.test(trimmed) || /\s/.test(handle) || !INSTAGRAM_HANDLE.test(handle)) return BAKERY_INSTAGRAM_HANDLE;
+  return handle;
+}
+
+export function instagramProfileUrl(handle: string) {
+  return `https://www.instagram.com/${normalizeInstagramHandle(handle)}/`;
+}
 
 export type ContactDetails = {
   bakeryName: string;
@@ -35,6 +54,6 @@ export async function getContactDetails(): Promise<ContactDetails> {
     email: resolvePublicContactEmail(process.env.CONTACT_EMAIL, settings?.notificationEmail, process.env.EMAIL_FROM),
     phone: "",
     phoneHref: "",
-    instagramHandle: settings?.instagramHandle ?? ""
+    instagramHandle: normalizeInstagramHandle(settings?.instagramHandle)
   };
 }
