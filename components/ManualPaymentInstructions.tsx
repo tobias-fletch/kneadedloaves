@@ -2,6 +2,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatMoney } from "@/lib/money";
+import { formatDeadline } from "@/lib/format-datetime";
 import { browserCheckoutStorage, clearCheckoutAttemptForOrder } from "@/lib/checkout-recovery-client";
 type Props = { orderId: string; token?: string; status: string; paymentState: string; totalCents: number; currency: string; reference: string | null; destination: string | null; handle: string | null; dueAt: string | null; deadlinePassed: boolean; reviewRequestedAt: string | null };
 function safeVenmoDestination(value: string | null) {
@@ -50,7 +51,7 @@ export function ManualPaymentInstructions(props: Props) {
       {stopped ? <p className="mt-3 border-2 border-ink bg-page p-3 font-bold">{props.status === "CANCELLED" ? "This order is cancelled." : "The payment deadline has passed."} Do not send a new payment. If you already paid, request a payment check below. A late payment does not reopen the order.</p> : requested || props.paymentState === "REVIEW" ? <p className="mt-3 font-bold">The bakery needs to check this payment. Do not pay again while it is being reviewed. A review request is not payment confirmation.</p> : <p className="mt-3">Your order is awaiting payment. Payment must be checked by the bakery before the deadline to keep this reservation. Send the exact amount to the saved Venmo destination and request a check promptly after paying.</p>}
       <dl className="mt-4 grid gap-4 sm:grid-cols-2">
         <div><dt className="text-xs font-black uppercase tracking-widest">Order total</dt><dd className="mt-1 text-2xl font-black">{formatMoney(props.totalCents)} <span className="text-sm">{props.currency}</span></dd></div>
-        <div><dt className="text-xs font-black uppercase tracking-widest">Payment deadline</dt><dd className="mt-1 font-bold">{props.dueAt ? <time dateTime={props.dueAt}>{new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(props.dueAt))} UTC</time> : "No payment deadline recorded. Contact the bakery before paying."}</dd></div>
+        <div><dt className="text-xs font-black uppercase tracking-widest">Payment deadline</dt><dd className="mt-1 font-bold">{props.dueAt ? <time dateTime={props.dueAt}>{formatDeadline(new Date(props.dueAt))}</time> : "No payment deadline recorded. Contact the bakery before paying."}</dd></div>
         <div className="sm:col-span-2"><dt className="text-xs font-black uppercase tracking-widest">Payment note / reference</dt><dd className="mt-1 break-all border-2 border-ink bg-page p-3 font-mono text-lg font-bold">{props.reference ?? "No reference recorded. Contact the bakery before paying."}</dd><p className="mt-1 text-sm">Include the full reference in your Venmo payment note. Do not include this private receipt link.</p></div>
         <div className="sm:col-span-2"><dt className="text-xs font-black uppercase tracking-widest">Saved recipient</dt><dd className="mt-1 break-all font-bold">{props.handle ?? "Recipient details unavailable"}</dd></div>
       </dl>
