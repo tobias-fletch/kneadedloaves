@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Mail, MessageCircle, Phone, Send, X } from "lucide-react";
+import { Mail, MessageCircle, Send, X } from "lucide-react";
 import type { ContactDetails } from "@/lib/contact";
 import { buildMailtoUrl } from "@/lib/mailto";
 
@@ -103,23 +103,10 @@ export function ContactButton({ contact }: { contact: ContactDetails }) {
                 </p>
               ) : null}
 
-              <div className="grid gap-2 sm:grid-cols-2">
-                <a className="btn-secondary" href={fallbackMailto || defaultMailto}>
-                  <Mail size={18} />
-                  Use my email app
-                </a>
-                {contact.phoneHref ? (
-                  <a className="btn-secondary" href={contact.phoneHref}>
-                    <Phone size={18} />
-                    Call
-                  </a>
-                ) : (
-                  <span className="btn-secondary text-ink/60" aria-disabled="true">
-                    <Phone size={18} />
-                    Phone not set
-                  </span>
-                )}
-              </div>
+              <a className="btn-secondary" href={fallbackMailto || defaultMailto}>
+                <Mail size={18} />
+                Use my email app
+              </a>
             </div>
           </div>
         </div>

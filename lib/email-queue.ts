@@ -7,12 +7,48 @@ export async function queueEmail(input: { dedupeKey: string; to: string; subject
   return tx.emailJob.upsert({ where: { dedupeKey: input.dedupeKey }, update: {}, create: input });
 }
 
-export async function smtpTransport() {
-  const config = await getAppConfigValues(["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM"]);
+export function mailboxAddress(from: string) {
+  const trimmed = from.trim();
+  const wrapped = trimmed.match(/^(.*)<([^<>]+)>$/);
+  const address = (wrapped ? wrapped[2] : trimmed).trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address)) throw new Error("EMAIL_FROM must be an email address or Name <email>.");
+  return address;
+}
+
+export function messageIdDomain(from: string) {
+  return mailboxAddress(from).split("@")[1]?.replace(/[>\s]/g, "") || "kneadedloaves.com";
+}
+
+export function mailerSettings(config: { SMTP_HOST: string; SMTP_PORT: string; SMTP_USER: string; SMTP_PASSWORD: string; EMAIL_FROM: string }) {
   if (Object.values(config).some(value => !value)) throw new Error("SMTP configuration is incomplete.");
   const port = Number(config.SMTP_PORT);
   if (![465, 587, 2525].includes(port)) throw new Error("Use an authenticated TLS SMTP port (465, 587 or 2525).");
-  return { from: config.EMAIL_FROM, transport: nodemailer.createTransport({ host: config.SMTP_HOST, port, secure: port === 465, requireTLS: port !== 465, auth: { user: config.SMTP_USER, pass: config.SMTP_PASSWORD }, connectionTimeout: 10000, socketTimeout: 30000, disableFileAccess: true, disableUrlAccess: true }) };
+  const fromAddress = mailboxAddress(config.EMAIL_FROM);
+  const host = config.SMTP_HOST.trim().toLowerCase().replace(/\.$/, "");
+  if (host === "smtp.gmail.com" && fromAddress.toLowerCase() !== config.SMTP_USER.trim().toLowerCase()) {
+    throw new Error("Gmail requires the EMAIL_FROM address to match SMTP_USER.");
+  }
+  const secure = port === 465;
+  return {
+    from: config.EMAIL_FROM.trim(),
+    options: {
+      host: config.SMTP_HOST,
+      port,
+      secure,
+      requireTLS: !secure,
+      auth: { user: config.SMTP_USER, pass: config.SMTP_PASSWORD },
+      connectionTimeout: 10000,
+      socketTimeout: 30000,
+      disableFileAccess: true,
+      disableUrlAccess: true
+    }
+  };
+}
+
+export async function smtpTransport() {
+  const config = await getAppConfigValues(["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM"]);
+  const settings = mailerSettings(config);
+  return { from: settings.from, transport: nodemailer.createTransport(settings.options) };
 }
 
 export async function processEmailQueue() {
@@ -26,7 +62,7 @@ export async function processEmailQueue() {
   for (const job of jobs) {
     try {
       const { from, transport } = await smtpTransport();
-      await transport.sendMail({ from, to: job.to, subject: job.subject, text: job.body, messageId: `<${job.id}@${from.split("@").pop()?.replace(/[>\s]/g, "") || "kneaded-loaves.local"}>` });
+      await transport.sendMail({ from, to: job.to, subject: job.subject, text: job.body, messageId: `<${job.id}@${messageIdDomain(from)}>` });
       await prisma.emailJob.update({ where: { id: job.id }, data: { status: "SENT", sentAt: new Date(), lastError: null, lockedUntil: null } });
     } catch {
       await prisma.emailJob.update({ where: { id: job.id }, data: { status: job.attempts >= 5 ? "FAILED" : "PENDING", lastError: "Delivery failed. Verify SMTP settings and provider logs.", availableAt: new Date(Date.now() + 60000 * 2 ** job.attempts), lockedUntil: null } });

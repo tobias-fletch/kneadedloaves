@@ -9,6 +9,7 @@ import "./globals.css";
 import { appearanceToCssVars, defaultAppearance, getAppearance } from "@/lib/appearance";
 import { getSession } from "@/lib/auth";
 import { getContactDetails } from "@/lib/contact";
+import { getManualPaymentConfig } from "@/lib/manual-payment-config";
 import { prisma } from "@/lib/prisma";
 
 export const metadata: Metadata = {
@@ -25,13 +26,15 @@ const inter = Inter({ weight: ["400", "500", "600", "700", "800"], subsets: ["la
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
-  const [settings, deliveryZones, pickupLocations, appearance, contact] = await Promise.all([
+  const [settings, deliveryZones, pickupLocations, appearance, contact, payment] = await Promise.all([
     prisma.adminSettings.findFirst().catch(() => null),
     prisma.deliveryZone.findMany({ where: { active: true } }).catch(() => []),
     prisma.pickupLocation.findMany({ where: { active: true } }).catch(() => []),
     getAppearance(),
-    getContactDetails()
+    getContactDetails(),
+    getManualPaymentConfig().catch(() => null)
   ]);
+  const checkoutReady = Boolean(payment?.ready);
   const publicSettings = {
     bakeryName: settings?.bakeryName ?? "Kneaded Loaves",
     businessDescription: settings?.businessDescription ?? "Small-batch breads and pastries baked for limited weekly order windows.",
@@ -51,7 +54,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </span>
             </Link>
             <div className="flex items-center gap-2">
-              <CartDrawerButton deliveryZones={deliveryZones} pickupLocations={pickupLocations} />
+              <CartDrawerButton checkoutReady={checkoutReady} contactEmail={contact.email} deliveryZones={deliveryZones} pickupLocations={pickupLocations} />
               {session?.role === "ADMIN" ? (
                 <Link className="btn-primary px-3" href="/admin">
                   Admin

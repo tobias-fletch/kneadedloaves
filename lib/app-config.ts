@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { UNDECRYPTABLE_SETTING_MESSAGE } from "@/lib/config-messages";
 import { decryptSecret } from "@/lib/secrets";
 import { prisma } from "@/lib/prisma";
 
@@ -40,19 +41,40 @@ export function isSetupConfigKey(key: string): key is SetupConfigKey {
   return setupConfigKeys.includes(key as SetupConfigKey);
 }
 
+type StoredConfig = { value: string; secret: boolean };
+
+export function readStoredConfig(key: string, stored: StoredConfig | undefined) {
+  const envValue = process.env[key]?.trim() || "";
+  if (envValue) return { value: envValue, undecryptable: false };
+  const raw = stored?.value?.trim() || "";
+  if (!raw || !stored?.secret) return { value: raw, undecryptable: false };
+  try {
+    return { value: decryptSecret(raw).trim(), undecryptable: false };
+  } catch {
+    console.warn(`Stored setting ${key} can't be decrypted. ${UNDECRYPTABLE_SETTING_MESSAGE} The CONFIG_ENCRYPTION_KEY may have been rotated.`);
+    return { value: "", undecryptable: true };
+  }
+}
+
+export async function readAppConfig(keys: (SetupConfigKey | "VENMO_VERIFIED_FINGERPRINT")[], db: Pick<Prisma.TransactionClient, "appConfig"> = prisma) {
+  const saved = await db.appConfig.findMany({ where: { key: { in: keys } } });
+  const savedByKey = new Map(saved.map((item) => [item.key, item]));
+  const undecryptable: string[] = [];
+  const values = Object.fromEntries(keys.map((key) => {
+    const read = readStoredConfig(key, savedByKey.get(key));
+    if (read.undecryptable) undecryptable.push(key);
+    return [key, read.value];
+  })) as Record<SetupConfigKey | "VENMO_VERIFIED_FINGERPRINT", string>;
+  return { values, undecryptable };
+}
+
 export async function getAppConfigValue(key: SetupConfigKey) {
   const saved = await prisma.appConfig.findUnique({ where: { key } }).catch(() => null);
-  if (process.env[key]?.trim()) return process.env[key]!.trim();
-  return saved?.value ? (saved.secret ? decryptSecret(saved.value) : saved.value).trim() : "";
+  return readStoredConfig(key, saved ?? undefined).value;
 }
 
 export async function getAppConfigValues(keys: (SetupConfigKey | "VENMO_VERIFIED_FINGERPRINT")[], db: Pick<Prisma.TransactionClient, "appConfig"> = prisma) {
-  const saved = await db.appConfig.findMany({ where: { key: { in: keys } } });
-  const savedByKey = new Map(saved.map((item) => [item.key, item.secret && !process.env[item.key]?.trim() ? decryptSecret(item.value) : item.value]));
-  return Object.fromEntries(keys.map((key) => [key, process.env[key]?.trim() || savedByKey.get(key)?.trim() || ""])) as Record<
-    SetupConfigKey | "VENMO_VERIFIED_FINGERPRINT",
-    string
-  >;
+  return (await readAppConfig(keys, db)).values;
 }
 
 export async function getSetupConfigSummary() {
@@ -63,12 +85,14 @@ export async function getSetupConfigSummary() {
     const savedItem = savedByKey.get(field.key);
     const envValue = process.env[field.key]?.trim() || "";
     const savedValue = savedItem?.value?.trim() || "";
-    const value = envValue || savedValue;
+    const read = readStoredConfig(field.key, savedItem ? { value: savedItem.value, secret: savedItem.secret } : undefined);
+    const value = read.value;
     return {
       ...field,
       configured: "optional" in field && field.optional ? true : Boolean(value),
       savedInAdmin: Boolean(savedValue),
       envConfigured: Boolean(envValue),
+      undecryptable: read.undecryptable,
       value: field.secret ? "" : value
     };
   });
