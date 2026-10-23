@@ -1,6 +1,6 @@
 import React from "react";
 import { Instagram, Mail } from "lucide-react";
-import { getContactDetails } from "@/lib/contact";
+import { getContactDetails, instagramProfileUrl } from "@/lib/contact";
 
 export default async function ContactPage() {
   const contact = await getContactDetails();
@@ -22,13 +22,19 @@ export default async function ContactPage() {
           </a>
         ) : null}
         {contact.instagramHandle ? (
-          <div className="panel flex items-center gap-3 p-5 md:col-span-2">
-            <Instagram className="text-jam" size={24} />
+          <a
+            className="panel flex items-center gap-3 p-5 transition hover:border-jam"
+            href={instagramProfileUrl(contact.instagramHandle)}
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label={`${contact.bakeryName} on Instagram`}
+          >
+            <Instagram className="text-jam" size={24} aria-hidden="true" />
             <div>
               <p className="font-black">Instagram</p>
-              <p className="text-sm text-ink/70">{contact.instagramHandle}</p>
+              <p className="text-sm text-ink/70">@{contact.instagramHandle}</p>
             </div>
-          </div>
+          </a>
         ) : null}
       </section>
     </main>
