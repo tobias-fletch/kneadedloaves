@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Anton, Inter, Oswald } from "next/font/google";
 import Link from "next/link";
 import { UserRound } from "lucide-react";
@@ -17,6 +17,12 @@ export const metadata: Metadata = {
   title: "Kneaded Loaves",
   description: "Small-batch bakery ordering and admin dashboard.",
   appleWebApp: { capable: true, title: "Kneaded Loaves" }
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  themeColor: "#3B4527"
 };
 
 export const dynamic = "force-dynamic";
@@ -48,14 +54,18 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en" className={`${anton.variable} ${oswald.variable} ${inter.variable}`}>
       <body style={appearanceToCssVars(appearance ?? defaultAppearance)}>
         <header className="sticky top-0 z-30 border-b-4 border-ink bg-[rgb(var(--color-page-rgb)/0.97)] backdrop-blur">
-          <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
-            <Link href="/" className="flex items-center gap-3">
-              <span className="hidden h-9 w-2.5 bg-jam sm:block" aria-hidden="true" />
-              <span className="font-display text-2xl uppercase leading-none tracking-wide text-ink">
-                {publicSettings.bakeryName}
-              </span>
+          <nav className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-4 gap-y-3 px-4 py-3 sm:flex-nowrap sm:px-6 lg:px-8">
+            <Link href="/" className="block w-full min-w-0 max-w-[370px] sm:w-auto sm:flex-1">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/brand/kl-c1-header.svg"
+                alt="Kneaded Loaves"
+                width={370}
+                height={56}
+                className="block h-auto w-full"
+              />
             </Link>
-            <div className="flex items-center gap-2">
+            <div className="ml-auto flex shrink-0 items-center gap-2">
               <CartDrawerButton checkoutReady={checkoutReady} adminTestMode={orderingAccess?.adminTestMode ?? false} adminSetupReasons={orderingAccess?.adminSetupReasons ?? []} contactEmail={contact.email} deliveryZones={deliveryZones} pickupLocations={pickupLocations} />
               {session?.role === "ADMIN" ? (
                 <Link className="btn-primary px-3" href="/admin">
