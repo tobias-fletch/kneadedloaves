@@ -14,9 +14,19 @@ import { storefrontCheckoutAccess } from "@/lib/storefront-ordering";
 import { prisma } from "@/lib/prisma";
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://kneadedloaves.com"),
   title: "Kneaded Loaves",
   description: "Small-batch bakery ordering and admin dashboard.",
-  appleWebApp: { capable: true, title: "Kneaded Loaves" }
+  appleWebApp: { capable: true, title: "Kneaded Loaves" },
+  openGraph: {
+    siteName: "Kneaded Loaves",
+    title: "Kneaded Loaves",
+    description: "Small-batch bakery ordering and admin dashboard.",
+    type: "website"
+  },
+  twitter: {
+    card: "summary_large_image"
+  }
 };
 
 export const dynamic = "force-dynamic";
