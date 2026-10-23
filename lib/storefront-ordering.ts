@@ -1,10 +1,21 @@
 import { getContactDetails, type ContactDetails } from "@/lib/contact";
-import { getManualPaymentConfig } from "@/lib/manual-payment-config";
+import { adminCheckoutReadiness, getManualPaymentConfig, paymentReadiness } from "@/lib/manual-payment-config";
 import { expireUnpaidOrders } from "@/lib/manual-payments";
 import { orderingAvailability } from "@/lib/ordering-status";
 import { getCurrentOrderWindow } from "@/lib/order-window";
 
-export async function getStorefrontOrderingState() {
+export function storefrontCheckoutAccess(config: Record<string, unknown>, isAdmin = false) {
+  const publicReadiness = paymentReadiness(config);
+  const admin = adminCheckoutReadiness(config, isAdmin);
+  return {
+    checkoutReady: admin.ready,
+    publicCheckoutReady: publicReadiness.ready,
+    adminTestMode: isAdmin && !publicReadiness.ready && admin.ready,
+    adminSetupReasons: isAdmin && !admin.ready ? admin.reasons : []
+  };
+}
+
+export async function getStorefrontOrderingState(isAdmin = false) {
   await expireUnpaidOrders().catch(() => {
     console.error("Could not expire overdue reservations before showing ordering status.");
   });
@@ -13,6 +24,16 @@ export async function getStorefrontOrderingState() {
     getManualPaymentConfig(),
     getContactDetails()
   ]);
-  const availability = orderingAvailability(Boolean(openWindow), payment.ready);
-  return { openWindow, nextWindow, checkoutReady: payment.ready, contact: contact satisfies ContactDetails, ...availability };
+  const access = storefrontCheckoutAccess(payment, isAdmin);
+  const availability = orderingAvailability(Boolean(openWindow), access.checkoutReady);
+  return {
+    openWindow,
+    nextWindow,
+    checkoutReady: access.checkoutReady,
+    publicCheckoutReady: access.publicCheckoutReady,
+    adminTestMode: access.adminTestMode,
+    adminSetupReasons: access.adminSetupReasons,
+    contact: contact satisfies ContactDetails,
+    ...availability
+  };
 }

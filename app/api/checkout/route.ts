@@ -9,9 +9,10 @@ import { cartOwner, acceptsOrders } from "@/lib/order-rules";
 import { readJson, rateLimit } from "@/lib/request";
 import { queueEmail } from "@/lib/email-queue";
 import { processOrderEmails } from "@/lib/email-maintenance";
-import { getManualPaymentConfig } from "@/lib/manual-payment-config";
+import { adminCheckoutReadiness, getManualPaymentConfig, isAdminTestOrder } from "@/lib/manual-payment-config";
 import { expireUnpaidOrders } from "@/lib/manual-payments";
 import { formatMoney } from "@/lib/money";
+import { deliveryCoverageError } from "@/lib/delivery-zone";
 import { describePickup } from "@/lib/pickup-location";
 import { checkoutDigest as digest, checkoutOwnerHash, checkoutOwners, checkoutRequestHash, lockCheckoutRequest, receiptForOwnedAttempt, validCheckoutKey } from "@/lib/checkout-recovery";
 export async function POST(request: Request) {
@@ -22,8 +23,9 @@ export async function POST(request: Request) {
   if (!validCheckoutKey(key)) return NextResponse.json({ error: "A fresh checkout request ID is required. Reload checkout." }, { status: 400 });
   try {
     const config = await getManualPaymentConfig();
-    if (!config.ready) return NextResponse.json({ error: "Online checkout is not available yet. Please contact the bakery." }, { status: 503 });
     const session = await getSession(true);
+    const isAdmin = session?.role === "ADMIN";
+    if (!adminCheckoutReadiness(config, isAdmin).ready) return NextResponse.json({ error: "Online checkout is not available yet. Please contact the bakery." }, { status: 503 });
     const sessionId = (await cookies()).get("bakery_cart")?.value;
     const owner = cartOwner(session?.sub, sessionId);
     if (!owner) return NextResponse.json({ error: "Your cart is empty." }, { status: 400 });
@@ -37,7 +39,7 @@ export async function POST(request: Request) {
       await lockCheckoutRequest(tx, key);
       await tx.$executeRaw`SELECT pg_advisory_xact_lock_shared(hashtext(${'manual-payment-config'}))`;
       const freshConfig = await getManualPaymentConfig(tx);
-      if (!freshConfig.ready || freshConfig.JWT_SECRET !== config.JWT_SECRET || freshConfig.VENMO_DESTINATION !== config.VENMO_DESTINATION || freshConfig.VENMO_HANDLE !== config.VENMO_HANDLE || freshConfig.PAYMENT_HOLD_MINUTES !== config.PAYMENT_HOLD_MINUTES) throw new Error("Payment settings changed. Review checkout and retry before sending money.");
+      if (!adminCheckoutReadiness(freshConfig, isAdmin).ready || freshConfig.JWT_SECRET !== config.JWT_SECRET || freshConfig.VENMO_DESTINATION !== config.VENMO_DESTINATION || freshConfig.VENMO_HANDLE !== config.VENMO_HANDLE || freshConfig.PAYMENT_HOLD_MINUTES !== config.PAYMENT_HOLD_MINUTES) throw new Error("Payment settings changed. Review checkout and retry before sending money.");
       const retry = await tx.order.findUnique({ where: { checkoutRequestHash: requestHash } });
       if (retry) {
         if (retry.checkoutPayloadHash !== checkoutPayloadHash) throw new Error("That checkout request ID was already used with different details. Recover the existing reservation before starting another.");
@@ -57,8 +59,9 @@ export async function POST(request: Request) {
       if (!lockedCart?.items.length) throw new Error("Your cart is empty.");
       const zone = parsed.data.fulfillmentType === "DELIVERY" && parsed.data.deliveryZoneId ? await tx.deliveryZone.findUnique({ where: { id: parsed.data.deliveryZoneId } }) : null;
       const pickup = parsed.data.fulfillmentType === "PICKUP" && parsed.data.pickupLocationId ? await tx.pickupLocation.findUnique({ where: { id: parsed.data.pickupLocationId } }) : null;
-      // A zone with no ZIP codes is a catch-all: it covers any delivery ZIP at its fee.
-      if (parsed.data.fulfillmentType === "DELIVERY" && (!zone?.active || (zone.zipCodes.length > 0 && !zone.zipCodes.includes(parsed.data.deliveryZip || "")))) throw new Error("Choose an active delivery zone covering your ZIP code.");
+      // An inactive zone covers no ZIP, including a catch-all whose zipCodes array is empty.
+      const deliveryError = deliveryCoverageError(zone, parsed.data.deliveryZip || "");
+      if (parsed.data.fulfillmentType === "DELIVERY" && deliveryError) throw new Error(deliveryError);
       if (parsed.data.fulfillmentType === "PICKUP" && !pickup?.active) throw new Error("Choose an active pickup location.");
       const deliveryFeeCents = zone?.feeCents || 0;
       const totalCents = lockedCart.items.reduce((sum,item) => sum + item.product.priceCents * item.quantity, deliveryFeeCents);
@@ -69,7 +72,7 @@ export async function POST(request: Request) {
         if (updated.count !== 1) throw new Error(`${item.product.name} is no longer available in that quantity.`);
         // soldOut is owner-controlled; inventoryLimit independently represents reserved stock.
       }
-      const paymentReference = `KL-${randomUUID().toUpperCase()}`;
+      const paymentReference = `${isAdminTestOrder(config, isAdmin) ? "KL-ADMIN-TEST-" : "KL-"}${randomUUID().toUpperCase()}`;
       const paymentDueAt = new Date(Math.min(now.getTime() + config.holdMinutes * 60000, freshWindow.manualOpen ? Infinity : freshWindow.closesAt.getTime()));
       const fulfillmentLocation = zone ? `${parsed.data.deliveryAddress}\n${parsed.data.deliveryZip}` : describePickup(pickup!).text;
       const created = await tx.order.create({ data: {

@@ -139,15 +139,26 @@ async function main() {
   });
 
   const delivery = await prisma.deliveryZone.upsert({
-    where: { id: "seed-delivery-zone" },
-    update: {},
+    where: { id: "dz-nearby-free" },
+    update: {
+      name: "Free delivery in 11217",
+      zipCodes: ["11217"],
+      feeCents: 0,
+      instructions: "Free delivery in 11217.",
+      active: true
+    },
     create: {
-      id: "seed-delivery-zone",
-      name: "North Brooklyn",
-      zipCodes: ["11211", "11222", "11249"],
-      feeCents: 600,
-      instructions: "Deliveries happen between 10am and 2pm."
+      id: "dz-nearby-free",
+      name: "Free delivery in 11217",
+      zipCodes: ["11217"],
+      feeCents: 0,
+      instructions: "Free delivery in 11217.",
+      active: true
     }
+  });
+  await prisma.deliveryZone.updateMany({
+    where: { id: { not: delivery.id }, active: true },
+    data: { active: false }
   });
 
   const pickup = await prisma.pickupLocation.upsert({

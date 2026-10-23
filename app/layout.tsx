@@ -10,6 +10,7 @@ import { appearanceToCssVars, defaultAppearance, getAppearance } from "@/lib/app
 import { getSession } from "@/lib/auth";
 import { getContactDetails } from "@/lib/contact";
 import { getManualPaymentConfig } from "@/lib/manual-payment-config";
+import { storefrontCheckoutAccess } from "@/lib/storefront-ordering";
 import { prisma } from "@/lib/prisma";
 
 export const metadata: Metadata = {
@@ -34,7 +35,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     getContactDetails(),
     getManualPaymentConfig().catch(() => null)
   ]);
-  const checkoutReady = Boolean(payment?.ready);
+  const orderingAccess = payment ? storefrontCheckoutAccess(payment, session?.role === "ADMIN") : null;
+  const checkoutReady = Boolean(orderingAccess?.checkoutReady);
   const publicSettings = {
     bakeryName: settings?.bakeryName ?? "Kneaded Loaves",
     businessDescription: settings?.businessDescription ?? "Small-batch breads and pastries baked for limited weekly order windows.",
@@ -54,7 +56,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               </span>
             </Link>
             <div className="flex items-center gap-2">
-              <CartDrawerButton checkoutReady={checkoutReady} contactEmail={contact.email} deliveryZones={deliveryZones} pickupLocations={pickupLocations} />
+              <CartDrawerButton checkoutReady={checkoutReady} adminTestMode={orderingAccess?.adminTestMode ?? false} adminSetupReasons={orderingAccess?.adminSetupReasons ?? []} contactEmail={contact.email} deliveryZones={deliveryZones} pickupLocations={pickupLocations} />
               {session?.role === "ADMIN" ? (
                 <Link className="btn-primary px-3" href="/admin">
                   Admin
