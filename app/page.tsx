@@ -97,7 +97,6 @@ export default async function HomePage() {
                   <p className="text-sm font-medium text-ink/75">{product.description}</p>
                   <div className="mt-auto space-y-1 border-t-2 border-ink/15 pt-3">
                     <p className="text-xs font-medium text-ink/60">Ingredients: {product.ingredients.join(", ") || "Ask for details"}</p>
-                    <p className="text-xs font-medium text-ink/60">Allergens: {product.allergens.join(", ") || "None listed"}</p>
                   </div>
                   <AddToCartButton productId={product.id} disabled={!orderingOpen || soldOut} />
                   {soldOut ? <span className="badge self-start bg-jam text-ink">Sold out</span> : null}
