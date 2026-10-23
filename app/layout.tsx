@@ -4,7 +4,7 @@ import Link from "next/link";
 import { UserRound } from "lucide-react";
 import { CartDrawerButton } from "@/components/CartDrawerButton";
 import { CloudflareAnalytics } from "@/components/CloudflareAnalytics";
-import { googleSiteVerification } from "@/lib/cloudflare-analytics";
+import { siteVerificationForHead } from "@/lib/cloudflare-analytics";
 import { ContactFooter } from "@/components/ContactFooter";
 import { InlineAdminPanel } from "@/components/InlineAdminPanel";
 import "./globals.css";
@@ -15,7 +15,7 @@ import { getManualPaymentConfig } from "@/lib/manual-payment-config";
 import { storefrontCheckoutAccess } from "@/lib/storefront-ordering";
 import { prisma } from "@/lib/prisma";
 
-const searchConsoleVerification = googleSiteVerification();
+const searchConsoleVerification = siteVerificationForHead();
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://kneadedloaves.com"),

@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import robots from "../app/robots";
 import sitemap from "../app/sitemap";
 import { CloudflareAnalytics } from "../components/CloudflareAnalytics";
-import { cloudflareAnalyticsToken, googleSiteVerification } from "../lib/cloudflare-analytics";
+import { SEARCH_CONSOLE_VERIFICATION, cloudflareAnalyticsToken, googleSiteVerification, siteVerificationForHead } from "../lib/cloudflare-analytics";
 import { bakeryJsonLd } from "../lib/site";
 
 function withToken(t: test.TestContext, value: string | undefined) {
@@ -62,4 +62,11 @@ test("Search Console verification value is optional and validated", () => {
   assert.equal(googleSiteVerification(""), null);
   assert.equal(googleSiteVerification('x" onload="y'), null);
   assert.equal(googleSiteVerification("AbC-123_xyzAbC-123_xyz"), "AbC-123_xyzAbC-123_xyz");
+});
+
+test("the kneadedloaves.com Search Console value renders in the head by default", () => {
+  assert.equal(SEARCH_CONSOLE_VERIFICATION, "xnKInryqMG81gSlWH-MzzMaTYBqfPKOE4cm5utQ7b8s");
+  assert.equal(siteVerificationForHead(undefined), SEARCH_CONSOLE_VERIFICATION);
+  assert.equal(siteVerificationForHead("  "), SEARCH_CONSOLE_VERIFICATION);
+  assert.equal(siteVerificationForHead("AbC-123_xyzAbC-123_xyz"), "AbC-123_xyzAbC-123_xyz");
 });

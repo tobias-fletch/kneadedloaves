@@ -11,8 +11,18 @@ export function cloudflareAnalyticsToken(value: string | null | undefined = proc
 }
 
 /**
- * Google Search Console URL-prefix verification (HTML tag method). Public value.
- * The meta tag renders only when NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION is set.
+ * Google Search Console URL-prefix verification for https://kneadedloaves.com/ (HTML tag method).
+ * Public value, not a secret. Keep it in place after verifying: Google re-checks it.
+ */
+export const SEARCH_CONSOLE_VERIFICATION = "xnKInryqMG81gSlWH-MzzMaTYBqfPKOE4cm5utQ7b8s";
+
+/** The value rendered in <head>: NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION if set, otherwise the committed value. */
+export function siteVerificationForHead(envValue: string | null | undefined = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION) {
+  return googleSiteVerification(envValue?.trim() || SEARCH_CONSOLE_VERIFICATION);
+}
+
+/**
+ * Validates a Search Console verification value; returns null for empty or malformed values.
  */
 export function googleSiteVerification(value: string | null | undefined = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION) {
   const token = value?.trim() ?? "";
