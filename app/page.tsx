@@ -3,20 +3,22 @@ import { format } from "date-fns";
 import { AddToCartButton } from "@/components/AddToCartButton";
 import { DatabaseSetup, databaseErrorMessage } from "@/components/DatabaseSetup";
 import { GlutenFreeNote } from "@/components/GlutenFreeNote";
-import { AlternateFulfillmentNote, OrderingBadge, OrderingUnavailableNotice, PickupAreaNote } from "@/components/OrderingStatus";
+import { AdminOrderingBanner, AlternateFulfillmentNote, OrderingBadge, OrderingUnavailableNotice, PickupAreaNote } from "@/components/OrderingStatus";
+import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getStorefrontOrderingState } from "@/lib/storefront-ordering";
 import { formatMoney } from "@/lib/money";
 
 export default async function HomePage() {
   try {
-    const ordering = await getStorefrontOrderingState();
-    const [settings, products, events] = await Promise.all([
+    const session = await getSession();
+    const [ordering, settings, products, events] = await Promise.all([
+      getStorefrontOrderingState(session?.role === "ADMIN"),
       prisma.adminSettings.findFirst(),
       prisma.product.findMany({ where: { active: true }, include: { images: true, category: true }, orderBy: { name: "asc" } }),
       prisma.popupEvent.findMany({ where: { startsAt: { gte: new Date() } }, take: 3, orderBy: { startsAt: "asc" } })
     ]);
-    const { openWindow, nextWindow, orderingOpen, unavailable, contact } = ordering;
+    const { openWindow, nextWindow, orderingOpen, unavailable, contact, adminTestMode, adminSetupReasons } = ordering;
 
     return (
     <main>
@@ -34,7 +36,8 @@ export default async function HomePage() {
               {settings?.businessDescription ?? "Small-batch breads and pastries baked for limited weekly order windows."}
             </p>
             <div className="mt-6 border-2 border-ink bg-page p-4">
-              {unavailable ? <OrderingUnavailableNotice email={contact.email} /> : (
+              {adminTestMode || adminSetupReasons.length > 0 ? <AdminOrderingBanner testMode={adminTestMode} reasons={adminSetupReasons} /> : null}
+              {adminSetupReasons.length > 0 ? null : unavailable ? <OrderingUnavailableNotice email={contact.email} /> : (
                 <p className="text-sm font-bold uppercase tracking-widest text-ink/70">
                   {openWindow ? settings?.orderingOpenMessage : settings?.orderingClosedMessage}
                 </p>
@@ -60,7 +63,8 @@ export default async function HomePage() {
             <div className="flex-1">
               <OrderingBadge orderingOpen={orderingOpen} unavailable={unavailable} />
               <h2 className="font-display mt-3 text-4xl uppercase tracking-wide text-ink sm:text-5xl">Weekly menu</h2>
-              {unavailable ? <div className="mt-2"><OrderingUnavailableNotice email={contact.email} /></div> : (
+              {adminTestMode || adminSetupReasons.length > 0 ? <div className="mt-2"><AdminOrderingBanner testMode={adminTestMode} reasons={adminSetupReasons} /></div> : null}
+              {adminSetupReasons.length > 0 ? null : unavailable ? <div className="mt-2"><OrderingUnavailableNotice email={contact.email} /></div> : (
                 <p className="mt-2 text-sm font-medium text-ink/70">
                   {orderingOpen
                     ? `Checkout is open until ${format(openWindow!.closesAt, "MMM d, h:mm a")}. Fulfillment is ${format(openWindow!.fulfillmentDate, "EEEE, MMM d")}.`

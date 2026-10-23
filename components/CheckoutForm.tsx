@@ -2,11 +2,12 @@
 import Link from "next/link";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { DeliveryZone, PickupLocation } from "@prisma/client";
+import { AdminOrderingBanner } from "@/components/OrderingStatus";
 import { browserCheckoutStorage, CheckoutStorageError, prepareCheckoutAttempt, receiptDestination, recoverCheckoutAttempt, rememberCheckoutOrder } from "@/lib/checkout-recovery-client";
 import { ORDERING_UNAVAILABLE_MESSAGE } from "@/lib/config-messages";
 import { describePickup } from "@/lib/pickup-location";
 
-export function CheckoutForm({ deliveryZones, pickupLocations, framed = true, hasCartItems = true, checkoutReady = true, contactEmail = "" }: { deliveryZones: DeliveryZone[]; pickupLocations: PickupLocation[]; framed?: boolean; hasCartItems?: boolean; checkoutReady?: boolean; contactEmail?: string }) {
+export function CheckoutForm({ deliveryZones, pickupLocations, framed = true, hasCartItems = true, checkoutReady = true, adminTestMode = false, adminSetupReasons = [], contactEmail = "" }: { deliveryZones: DeliveryZone[]; pickupLocations: PickupLocation[]; framed?: boolean; hasCartItems?: boolean; checkoutReady?: boolean; adminTestMode?: boolean; adminSetupReasons?: string[]; contactEmail?: string }) {
   const [fulfillment, setFulfillment] = useState<"DELIVERY" | "PICKUP">(pickupLocations.length ? "PICKUP" : "DELIVERY");
   const [message, setMessage] = useState("");
   const [showSignInNudge, setShowSignInNudge] = useState(true);
@@ -66,7 +67,8 @@ export function CheckoutForm({ deliveryZones, pickupLocations, framed = true, ha
   }
   if (!hasCartItems && phase === "ready" && !hasSavedAttempt) return null;
   return <form onSubmit={event => { event.preventDefault(); void submit(new FormData(event.currentTarget)); }} className={`${framed ? "panel p-4" : "border-t-2 border-ink pt-4"} space-y-4`}>
-    {!checkoutReady ? <p className="border-2 border-ink bg-jam p-3 text-sm font-black" role="status">{ORDERING_UNAVAILABLE_MESSAGE}{contactEmail ? <> Email <a className="underline" href={`mailto:${contactEmail}`}>{contactEmail}</a>.</> : null}</p> : null}
+    {adminTestMode || adminSetupReasons.length > 0 ? <AdminOrderingBanner testMode={adminTestMode} reasons={adminSetupReasons} /> : null}
+    {!checkoutReady && adminSetupReasons.length === 0 ? <p className="border-2 border-ink bg-jam p-3 text-sm font-black" role="status">{ORDERING_UNAVAILABLE_MESSAGE}{contactEmail ? <> Email <a className="underline" href={`mailto:${contactEmail}`}>{contactEmail}</a>.</> : null}</p> : null}
     {hasCartItems ? <fieldset disabled={phase !== "ready" || !checkoutReady} className="space-y-4">
       <h2 className="font-display text-2xl uppercase tracking-wide">Checkout</h2>
       {showSignInNudge ? <p className="flex items-start justify-between gap-3 border-2 border-ink bg-crumb p-3 text-sm font-medium"><span>Have an account? <Link href="/login" className="font-black underline">Sign in</Link> to link this order to it. Checkout works fine as a guest.</span><button type="button" aria-label="Dismiss" onClick={() => setShowSignInNudge(false)} className="shrink-0 px-1 text-lg font-black">&times;</button></p> : null}

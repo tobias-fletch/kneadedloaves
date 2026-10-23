@@ -81,8 +81,15 @@ test("storefront state uses checkout readiness, not the order window alone", asy
   values.VENMO_CHECKOUT_ENABLED = "false";
   const paused = await getStorefrontOrderingState();
   assert.equal(paused.checkoutReady, false);
+  assert.equal(paused.publicCheckoutReady, false);
   assert.equal(paused.orderingOpen, false);
   assert.equal(paused.unavailable, true);
+  assert.equal(paused.adminTestMode, false);
+  assert.deepEqual(paused.adminSetupReasons, []);
+  const customer = await getStorefrontOrderingState(false);
+  assert.equal(customer.checkoutReady, false);
+  assert.equal(customer.unavailable, true);
+  assert.equal(customer.adminTestMode, false);
   stub(t, prisma.orderWindow, "findMany", async () => []);
   values.VENMO_CHECKOUT_ENABLED = "true";
   const closed = await getStorefrontOrderingState();

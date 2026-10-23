@@ -8,3 +8,8 @@ export const GLUTEN_FREE_ON_REQUEST_NOTE = "Need it gluten-free? Any item on our
 
 /** {day} is the fulfillment weekday. "Email us" is the public contact mailto. */
 export const ALTERNATE_FULFILLMENT_NOTE = "Can't make {day}? Email us to arrange another time.";
+
+/** Shown only to a signed-in admin when public ordering is off solely because of the three launch flags. */
+export const ADMIN_TEST_MODE_BANNER = "ADMIN TEST MODE: ordering is off for the public. Orders you place here are real orders in the database; mark paid and cancel them in Admin > Orders.";
+
+export const ADMIN_CHECKOUT_BLOCKED_LEAD = "Admin checkout is still blocked. Fix these in Admin > Setup:";
