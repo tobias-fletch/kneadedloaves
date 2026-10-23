@@ -353,6 +353,7 @@ model EmailJob {
   to String
   subject String
   body String
+  html String?
   attempts Int @default(0)
   status String @default("PENDING")
   lastError String?

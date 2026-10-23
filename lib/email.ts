@@ -1,5 +1,6 @@
 import { FulfillmentType } from "@prisma/client";
 import { getAppConfigValues } from "@/lib/app-config";
+import { BAKERY_CONTACT_EMAIL } from "@/lib/config-messages";
 import { formatMoney } from "@/lib/money";
 import { PICKUP_AREA } from "@/lib/pickup-location";
 
@@ -17,12 +18,12 @@ const defaultTemplates = {
   PICKUP: {
     subject: "Your bakery pickup order is confirmed",
     body:
-      `Hi {{customerName}},\n\nThanks for your order #{{orderId}}. We have it down for pickup at ${PICKUP_AREA}.\n\n{{items}}\n\nTotal: {{total}}\n\nPickup: ${PICKUP_AREA}. The bakery confirms the exact handoff after payment.\nPickup instructions:\n{{fulfillmentInstructions}}\n\nSee you soon!`
+      `Hi {{customerName}},\n\nThanks for your order #{{orderId}}. We have it down for pickup at ${PICKUP_AREA}.\n\nORDER SUMMARY\n\n{{items}}\n\nTotal: {{total}}\n\nPICKUP\n\n${PICKUP_AREA}\nThe bakery confirms the exact handoff after payment.\n\nPickup instructions:\n{{fulfillmentInstructions}}\n\nCONTACT\n\n${BAKERY_CONTACT_EMAIL}\n\nSee you soon!`
   },
   DELIVERY: {
     subject: "Your bakery delivery order is confirmed",
     body:
-      "Hi {{customerName}},\n\nThanks for your order #{{orderId}}. We have it down for local delivery.\n\n{{items}}\n\nTotal: {{total}}\n\nDelivery notes:\n{{fulfillmentInstructions}}\n\nThank you for ordering!"
+      "Hi {{customerName}},\n\nThanks for your order #{{orderId}}. We have it down for local delivery.\n\nORDER SUMMARY\n\n{{items}}\n\nTotal: {{total}}\n\nDELIVERY\n\n{{fulfillmentInstructions}}\n\nCONTACT\n\n${BAKERY_CONTACT_EMAIL}\n\nThank you for ordering!"
   }
 };
 

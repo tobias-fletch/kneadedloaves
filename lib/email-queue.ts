@@ -3,7 +3,7 @@ import nodemailer from "nodemailer";
 import { prisma } from "@/lib/prisma";
 import { getAppConfigValues } from "@/lib/app-config";
 
-export async function queueEmail(input: { dedupeKey: string; to: string; subject: string; body: string }, tx: Prisma.TransactionClient = prisma) {
+export async function queueEmail(input: { dedupeKey: string; to: string; subject: string; body: string; html?: string | null }, tx: Prisma.TransactionClient = prisma) {
   return tx.emailJob.upsert({ where: { dedupeKey: input.dedupeKey }, update: {}, create: input });
 }
 
@@ -59,6 +59,18 @@ export async function verifySmtpConnection(config: { SMTP_HOST: string; SMTP_POR
   return { ok: true as const };
 }
 
+export function emailDeliveryMessage(job: { id: string; to: string; subject: string; body: string; html?: string | null }, from: string) {
+  const message: { from: string; to: string; subject: string; text: string; html?: string; messageId: string } = {
+    from,
+    to: job.to,
+    subject: job.subject,
+    text: job.body,
+    messageId: `<${job.id}@${messageIdDomain(from)}>`
+  };
+  if (job.html) message.html = job.html;
+  return message;
+}
+
 export function emailJobIsClaimable(job: { status: string; availableAt: Date; lockedUntil: Date | null; attempts: number }, now = new Date()) {
   if (job.attempts >= 5) return false;
   if (job.status === "PENDING") return job.availableAt.getTime() <= now.getTime();
@@ -76,16 +88,16 @@ export async function processEmailQueue(options?: { dedupeSuffix?: string }) {
   const like = emailDedupeLike(options?.dedupeSuffix ?? "");
   // Claim with SKIP LOCKED so several worker processes cannot send the same job concurrently.
   // The WHERE clause matches emailJobIsClaimable: pending and due, or a stale send lock, under 5 attempts.
-  const jobs = await prisma.$queryRaw<{ id: string; to: string; subject: string; body: string; attempts: number }[]>`
+  const jobs = await prisma.$queryRaw<{ id: string; to: string; subject: string; body: string; html: string | null; attempts: number }[]>`
     UPDATE "EmailJob" SET "status" = 'SENDING', "lockedUntil" = (NOW() AT TIME ZONE 'UTC') + INTERVAL '2 minutes', "attempts" = "attempts" + 1
     WHERE "id" IN (SELECT "id" FROM "EmailJob" WHERE
       (("status" = 'PENDING' AND "availableAt" <= (NOW() AT TIME ZONE 'UTC')) OR ("status" = 'SENDING' AND "lockedUntil" < (NOW() AT TIME ZONE 'UTC')))
       AND "attempts" < 5 AND "dedupeKey" LIKE ${like} ESCAPE '\\' ORDER BY "createdAt" FOR UPDATE SKIP LOCKED LIMIT 1)
-    RETURNING "id", "to", "subject", "body", "attempts"`;
+    RETURNING "id", "to", "subject", "body", "html", "attempts"`;
   for (const job of jobs) {
     try {
       const { from, transport } = await smtpTransport();
-      await transport.sendMail({ from, to: job.to, subject: job.subject, text: job.body, messageId: `<${job.id}@${messageIdDomain(from)}>` });
+      await transport.sendMail(emailDeliveryMessage(job, from));
       await prisma.emailJob.update({ where: { id: job.id }, data: { status: "SENT", sentAt: new Date(), lastError: null, lockedUntil: null } });
     } catch {
       await prisma.emailJob.update({ where: { id: job.id }, data: { status: job.attempts >= 5 ? "FAILED" : "PENDING", lastError: "Delivery failed. Verify SMTP settings and provider logs.", availableAt: new Date(Date.now() + 60000 * 2 ** job.attempts), lockedUntil: null } });

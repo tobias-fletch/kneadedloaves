@@ -11,7 +11,7 @@ import { queueEmail } from "@/lib/email-queue";
 import { processOrderEmails } from "@/lib/email-maintenance";
 import { adminCheckoutReadiness, getManualPaymentConfig, isAdminTestOrder } from "@/lib/manual-payment-config";
 import { expireUnpaidOrders } from "@/lib/manual-payments";
-import { formatMoney } from "@/lib/money";
+import { renderOrderEmail } from "@/lib/order-email";
 import { deliveryCoverageError } from "@/lib/delivery-zone";
 import { describePickup } from "@/lib/pickup-location";
 import { checkoutDigest as digest, checkoutOwnerHash, checkoutOwners, checkoutRequestHash, lockCheckoutRequest, receiptForOwnedAttempt, validCheckoutKey } from "@/lib/checkout-recovery";
@@ -86,9 +86,30 @@ export async function POST(request: Request) {
         items: { create: lockedCart.items.map(item => ({ productId: item.productId, quantity: item.quantity, unitPriceCents: item.product.priceCents, productName: item.product.name })) }
       } });
       await tx.cartItem.deleteMany({ where: { cartId: cart.id } });
-      await queueEmail({ dedupeKey: `order-received:${created.id}`, to: created.customerEmail, subject: "Bakery reservation received — awaiting payment", body: `Hi ${created.customerName},\n\nYour reservation ${paymentReference} is awaiting payment. It is not paid or scheduled for fulfillment yet.\n\n${lockedCart.items.map(item => `${item.quantity} x ${item.product.name}: ${formatMoney(item.product.priceCents * item.quantity)}`).join("\n")}\nDelivery fee: ${formatMoney(deliveryFeeCents)}\nExact total: ${formatMoney(totalCents)} USD\n\nPay ${config.VENMO_HANDLE} using the verified business destination: ${config.VENMO_DESTINATION}\nUse only reference ${paymentReference} in the payment note; do not include your address or other private details.\nPayment must be independently verified by ${paymentDueAt.toISOString()}. If already paid, request review from your private receipt.\nKeep the private receipt link shown after checkout. Signed-in customers can also find orders in their account.\n\n${fulfillmentLocation}\n${created.fulfillmentInstructions || ""}\nExpired reservations are not automatically restored by a late payment. Contact the bakery if you have paid after expiry.` }, tx);
+      const emailDetails = {
+        customerName: created.customerName,
+        customerEmail: created.customerEmail,
+        paymentReference,
+        items: lockedCart.items.map(item => ({ productName: item.product.name, quantity: item.quantity, unitPriceCents: item.product.priceCents })),
+        deliveryFeeCents,
+        totalCents,
+        fulfillmentType: parsed.data.fulfillmentType,
+        fulfillmentDate: freshWindow.fulfillmentDate,
+        pickupAddress: pickup ? describePickup(pickup).address : null,
+        deliveryAddress: parsed.data.deliveryAddress ?? null,
+        deliveryZip: parsed.data.deliveryZip ?? null,
+        fulfillmentInstructions: created.fulfillmentInstructions,
+        paymentHandle: config.VENMO_HANDLE,
+        paymentDestination: config.VENMO_DESTINATION,
+        paymentDueAt
+      };
+      const customerMessage = renderOrderEmail("customer-reservation", emailDetails);
+      await queueEmail({ dedupeKey: `order-received:${created.id}`, to: created.customerEmail, subject: customerMessage.subject, body: customerMessage.text, html: customerMessage.html }, tx);
       const settings = await tx.adminSettings.findFirst();
-      if (settings?.emailNotificationsEnabled && settings.notificationEmail) await queueEmail({ dedupeKey: `admin-order:${created.id}`, to: settings.notificationEmail, subject: "New bakery reservation awaiting payment", body: `Reservation ${paymentReference} received. Payment is unverified. Check admin orders before the ${paymentDueAt.toISOString()} reservation deadline.` }, tx);
+      if (settings?.emailNotificationsEnabled && settings.notificationEmail) {
+        const adminMessage = renderOrderEmail("admin-new-order", emailDetails);
+        await queueEmail({ dedupeKey: `admin-order:${created.id}`, to: settings.notificationEmail, subject: adminMessage.subject, body: adminMessage.text, html: adminMessage.html }, tx);
+      }
       return receiptForOwnedAttempt(tx, created, key, owners, config.JWT_SECRET);
     });
     if (process.env.VERCEL) {
