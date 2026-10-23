@@ -1,6 +1,8 @@
-import { getAppConfigValues } from "@/lib/app-config";
-import { getManualPaymentConfig } from "@/lib/manual-payment-config";
+import { readAppConfig } from "@/lib/app-config";
+import { ENCRYPTION_KEY_MISCONFIGURED_MESSAGE, UNDECRYPTABLE_SETTING_MESSAGE } from "@/lib/config-messages";
+import { paymentConfigKeys, paymentReadiness } from "@/lib/manual-payment-config";
 import { prisma } from "@/lib/prisma";
+import { configEncryptionKeyStatus } from "@/lib/secrets";
 
 type SetupItem = {
   id: string;
@@ -57,14 +59,8 @@ export async function getSetupChecklist() {
     prisma.emailSubscriber.count({ where: { active: true } })
   ]);
 
-  const config = await getAppConfigValues([
-    "EMAIL_FROM",
-    "SMTP_HOST",
-    "SMTP_PORT",
-    "SMTP_USER",
-    "SMTP_PASSWORD",
-    "APP_URL",
-    "CHECKOUT_SMOKE_TESTED",
+  const configRead = await readAppConfig([
+    ...paymentConfigKeys,
     "INSTAGRAM_GRAPH_TOKEN",
     "FACEBOOK_PAGE_TOKEN",
     "TIKTOK_CLIENT_KEY",
@@ -72,7 +68,8 @@ export async function getSetupChecklist() {
     "YOUTUBE_CLIENT_ID",
     "YOUTUBE_CLIENT_SECRET"
   ]);
-  const payment = await getManualPaymentConfig();
+  const config = configRead.values;
+  const payment = { ...config, ...paymentReadiness(config) };
   const emailReady = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM"].every((key) => Boolean(config[key as keyof typeof config])) && [465, 587, 2525].includes(Number(config.SMTP_PORT));
   const appUrl = config.APP_URL;
   const socialCredentialGroups = [
@@ -204,6 +201,28 @@ export async function getSetupChecklist() {
       complete: jwtSecret.length >= 32 && !/development|replace-with|change-me/i.test(jwtSecret)
     }
   ];
+
+  if (!configEncryptionKeyStatus().valid) {
+    items.push({
+      id: "encryption-key",
+      group: "Launch",
+      title: "Fix the server encryption key",
+      detail: `${ENCRYPTION_KEY_MISCONFIGURED_MESSAGE} Secret setup fields need a Vercel environment variable until the key is valid.`,
+      href: "/admin/setup",
+      complete: false
+    });
+  }
+
+  if (configRead.undecryptable.length) {
+    items.push({
+      id: "undecryptable-settings",
+      group: "Launch",
+      title: "Re-enter settings saved before the encryption key changed",
+      detail: `${UNDECRYPTABLE_SETTING_MESSAGE} Affected settings: ${configRead.undecryptable.join(", ")}.`,
+      href: "/admin/setup",
+      complete: false
+    });
+  }
 
   const incomplete = items.filter((item) => !item.complete);
   return {

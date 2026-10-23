@@ -13,6 +13,9 @@ function stub(t: TestContext, target: object, key: string, implementation: (...a
   t.after(() => { Reflect.set(target, key, original); });
 }
 function fixture(t: TestContext) {
+  const previousKey = process.env.CONFIG_ENCRYPTION_KEY;
+  process.env.CONFIG_ENCRYPTION_KEY = "ab".repeat(32);
+  t.after(() => { if (previousKey === undefined) delete process.env.CONFIG_ENCRYPTION_KEY; else process.env.CONFIG_ENCRYPTION_KEY = previousKey; });
   for (const key of [...setupConfigKeys, "VENMO_VERIFIED_FINGERPRINT", "NEXT_PUBLIC_APP_URL"]) {
     const before = process.env[key];
     delete process.env[key];

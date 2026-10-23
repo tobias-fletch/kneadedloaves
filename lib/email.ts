@@ -1,6 +1,7 @@
 import { FulfillmentType } from "@prisma/client";
 import { getAppConfigValues } from "@/lib/app-config";
 import { formatMoney } from "@/lib/money";
+import { PICKUP_AREA } from "@/lib/pickup-location";
 
 export type OrderEmailInput = {
   to: string;
@@ -16,7 +17,7 @@ const defaultTemplates = {
   PICKUP: {
     subject: "Your bakery pickup order is confirmed",
     body:
-      "Hi {{customerName}},\n\nThanks for your order #{{orderId}}. We have it down for pickup.\n\n{{items}}\n\nTotal: {{total}}\n\nPickup instructions:\n{{fulfillmentInstructions}}\n\nSee you soon!"
+      `Hi {{customerName}},\n\nThanks for your order #{{orderId}}. We have it down for pickup at ${PICKUP_AREA}.\n\n{{items}}\n\nTotal: {{total}}\n\nPickup: ${PICKUP_AREA}. The bakery confirms the exact handoff after payment.\nPickup instructions:\n{{fulfillmentInstructions}}\n\nSee you soon!`
   },
   DELIVERY: {
     subject: "Your bakery delivery order is confirmed",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { ShoppingCart } from "lucide-react";
 
 export function AddToCartButton({ productId, disabled }: { productId: string; disabled?: boolean }) {

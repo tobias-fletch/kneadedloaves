@@ -140,9 +140,11 @@ async function main() {
   const accountRecovered = await recover(accountKey, accountCookie); assert.equal(accountRecovered.status, 200, await accountRecovered.clone().text()); assert.equal((await accountRecovered.json()).orderId, accountOrder.id);
   assert.equal(await prisma.order.count(), 2); assert.equal(await prisma.paymentEvent.count(), 0); assert.equal(await prisma.emailJob.count(), 0);
   pass("account recovery rejects unrelated accounts and guest cookies without creating orders, events, or email");
-  // Even a fully enabled saved configuration must not bypass this release's
-  // production hard-stop. All credentials below are local synthetic fixtures;
-  // the harness never starts an email worker or contacts a payment provider.
+  // Operational gates are the only production stop. A fully enabled saved
+  // configuration must get past the readiness response. This request has no
+  // cart, so it still must not create an order. All credentials below are
+  // local synthetic fixtures; the harness never starts an email worker or
+  // contacts a payment provider.
   const enabledHandle = "@synthetic-bakery";
   const enabledDestination = "https://venmo.com/synthetic-bakery";
   const enabledConfig = {
@@ -155,9 +157,9 @@ async function main() {
   };
   await prisma.appConfig.createMany({ data: Object.entries(enabledConfig).map(([key, value]) => ({ key, value, secret: false })) });
   try {
-    const paused = await checkout();
-    assert.equal(paused.status, 503, await paused.clone().text());
-    assert.deepEqual(await paused.json(), { error: "Online checkout is not available yet. Please contact the bakery." });
+    const opened = await checkout();
+    assert.equal(opened.status, 400, await opened.clone().text());
+    assert.deepEqual(await opened.json(), { error: "Your cart is empty." });
     const stillRecoverable = await recover(guestKey, guestCookie);
     assert.equal(stillRecoverable.status, 200, await stillRecoverable.clone().text());
     assert.deepEqual(await stillRecoverable.json(), receipt);
@@ -168,7 +170,7 @@ async function main() {
   } finally {
     await prisma.appConfig.deleteMany({ where: { key: { in: Object.keys(enabledConfig) } } });
   }
-  pass("production release hard-stop blocks checkout with every payment gate enabled, preserves orders, and permits owner recovery");
+  pass("enabled operational gates no longer hard-stop production checkout; an empty cart writes nothing and owner recovery still works");
   await prisma.$executeRawUnsafe('ALTER TABLE "RateLimit" RENAME TO "RateLimit_security_unavailable"');
   try { assert.equal((await request("/api/auth/forgot-password", { body: { email: user.email } })).status, 429); assert.equal(await prisma.passwordReset.count(), 0); }
   finally { await prisma.$executeRawUnsafe('ALTER TABLE "RateLimit_security_unavailable" RENAME TO "RateLimit"'); }

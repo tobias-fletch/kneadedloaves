@@ -3,6 +3,7 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { getSession } from "@/lib/auth";
 import { formatMoney } from "@/lib/money";
+import { expireUnpaidOrdersOpportunistically } from "@/lib/manual-payments";
 import { prisma } from "@/lib/prisma";
 
 export default async function AccountPage() {
@@ -19,6 +20,7 @@ export default async function AccountPage() {
     );
   }
 
+  await expireUnpaidOrdersOpportunistically();
   const orders = await prisma.order.findMany({
     where: { userId: session.sub },
     include: { items: true },

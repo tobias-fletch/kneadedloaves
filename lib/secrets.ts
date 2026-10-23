@@ -1,8 +1,26 @@
 import { createCipheriv, createDecipheriv, randomBytes } from "crypto";
 
+export function normalizedConfigEncryptionKey(raw = process.env.CONFIG_ENCRYPTION_KEY ?? "") {
+  let value = raw.trim();
+  const quote = value[0];
+  if ((quote === "\"" || quote === "'") && value.length >= 2 && value.at(-1) === quote) value = value.slice(1, -1).trim();
+  return value;
+}
+
+export function configEncryptionKeyStatus(raw = process.env.CONFIG_ENCRYPTION_KEY ?? "") {
+  const value = normalizedConfigEncryptionKey(raw);
+  const hexadecimal = value.length > 0 && /^[0-9a-f]+$/i.test(value);
+  return { valid: /^[0-9a-f]{64}$/i.test(value), length: value.length, hexadecimal };
+}
+
+export function assertConfigEncryptionKey() {
+  const status = configEncryptionKeyStatus();
+  if (!status.valid) throw new Error(`CONFIG_ENCRYPTION_KEY must contain 64 hexadecimal characters. Observed length ${status.length}; characters are ${status.hexadecimal ? "hexadecimal" : "not hexadecimal"}.`);
+}
+
 function key() {
-  const value = process.env.CONFIG_ENCRYPTION_KEY || "";
-  if (!/^[0-9a-f]{64}$/i.test(value)) throw new Error("CONFIG_ENCRYPTION_KEY must contain 64 hexadecimal characters.");
+  const value = normalizedConfigEncryptionKey();
+  assertConfigEncryptionKey();
   return Buffer.from(value, "hex");
 }
 export function encryptSecret(value: string) {

@@ -2,34 +2,28 @@ import { MenuProductImage } from "@/components/MenuProductImage";
 import { format } from "date-fns";
 import { AddToCartButton } from "@/components/AddToCartButton";
 import { DatabaseSetup, databaseErrorMessage } from "@/components/DatabaseSetup";
+import { OrderingBadge, OrderingUnavailableNotice, PickupAreaNote } from "@/components/OrderingStatus";
 import { prisma } from "@/lib/prisma";
-import { getCurrentOrderWindow } from "@/lib/order-window";
+import { getStorefrontOrderingState } from "@/lib/storefront-ordering";
 import { formatMoney } from "@/lib/money";
 
 export default async function HomePage() {
-  let data;
   try {
-    data = await Promise.all([
-      getCurrentOrderWindow(),
+    const ordering = await getStorefrontOrderingState();
+    const [settings, products, events] = await Promise.all([
       prisma.adminSettings.findFirst(),
       prisma.product.findMany({ where: { active: true }, include: { images: true, category: true }, orderBy: { name: "asc" } }),
       prisma.popupEvent.findMany({ where: { startsAt: { gte: new Date() } }, take: 3, orderBy: { startsAt: "asc" } })
     ]);
-  } catch (error) {
-    return <DatabaseSetup detail={databaseErrorMessage(error)} />;
-  }
-  const [{ openWindow, nextWindow }, settings, products, events] = data;
-  const orderingOpen = Boolean(openWindow);
+    const { openWindow, nextWindow, orderingOpen, unavailable, contact } = ordering;
 
-  return (
+    return (
     <main>
       <section className="border-b-4 border-ink">
         <div className="section py-10">
           <div className="border-4 border-ink bg-crumb p-6 shadow-hard sm:p-10">
             <div className="flex flex-wrap items-center gap-3">
-              <span className={`badge ${openWindow ? "bg-sage text-white" : "bg-jam text-ink"}`}>
-                {openWindow ? "Orders Open" : "Orders Closed"}
-              </span>
+              <OrderingBadge orderingOpen={orderingOpen} unavailable={unavailable} />
               <span className="h-1.5 flex-1 bg-jam" aria-hidden="true" />
             </div>
             <h1 className="font-display mt-6 text-6xl uppercase leading-[0.95] text-ink sm:text-8xl">
@@ -39,9 +33,11 @@ export default async function HomePage() {
               {settings?.businessDescription ?? "Small-batch breads and pastries baked for limited weekly order windows."}
             </p>
             <div className="mt-6 border-2 border-ink bg-page p-4">
-              <p className="text-sm font-bold uppercase tracking-widest text-ink/70">
-                {openWindow ? settings?.orderingOpenMessage : settings?.orderingClosedMessage}
-              </p>
+              {unavailable ? <OrderingUnavailableNotice email={contact.email} /> : (
+                <p className="text-sm font-bold uppercase tracking-widest text-ink/70">
+                  {openWindow ? settings?.orderingOpenMessage : settings?.orderingClosedMessage}
+                </p>
+              )}
               <p className="font-display mt-1 text-2xl uppercase tracking-wide">
                 {openWindow
                   ? `Fulfillment: ${format(openWindow.fulfillmentDate, "EEEE, MMM d")}`
@@ -49,6 +45,7 @@ export default async function HomePage() {
                     ? `Next opens: ${format(nextWindow.opensAt, "MMM d, h:mm a")}`
                     : "Next window coming soon"}
               </p>
+              <PickupAreaNote />
             </div>
           </div>
         </div>
@@ -59,17 +56,18 @@ export default async function HomePage() {
           <div className="flex items-stretch gap-4">
             <span className="w-3 shrink-0 bg-jam" aria-hidden="true" />
             <div className="flex-1">
-              <span className={`badge ${orderingOpen ? "bg-sage text-white" : "bg-jam text-ink"}`}>
-                {orderingOpen ? "Orders Open" : "Orders Closed"}
-              </span>
+              <OrderingBadge orderingOpen={orderingOpen} unavailable={unavailable} />
               <h2 className="font-display mt-3 text-4xl uppercase tracking-wide text-ink sm:text-5xl">Weekly menu</h2>
-              <p className="mt-2 text-sm font-medium text-ink/70">
-                {orderingOpen
-                  ? `Checkout is open until ${format(openWindow!.closesAt, "MMM d, h:mm a")}. Fulfillment is ${format(openWindow!.fulfillmentDate, "EEEE, MMM d")}.`
-                  : nextWindow
-                    ? `Browse now. Checkout opens ${format(nextWindow.opensAt, "MMM d, h:mm a")}.`
-                    : "Browse now. The next ordering window will be announced soon."}
-              </p>
+              {unavailable ? <div className="mt-2"><OrderingUnavailableNotice email={contact.email} /></div> : (
+                <p className="mt-2 text-sm font-medium text-ink/70">
+                  {orderingOpen
+                    ? `Checkout is open until ${format(openWindow!.closesAt, "MMM d, h:mm a")}. Fulfillment is ${format(openWindow!.fulfillmentDate, "EEEE, MMM d")}.`
+                    : nextWindow
+                      ? `Browse now. Checkout opens ${format(nextWindow.opensAt, "MMM d, h:mm a")}.`
+                      : "Browse now. The next ordering window will be announced soon."}
+                </p>
+              )}
+              <PickupAreaNote />
             </div>
           </div>
         </div>
@@ -119,5 +117,8 @@ export default async function HomePage() {
         </div>
       </section>
     </main>
-  );
+    );
+  } catch (error) {
+    return <DatabaseSetup detail={databaseErrorMessage(error)} />;
+  }
 }

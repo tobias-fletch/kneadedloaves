@@ -39,11 +39,12 @@ domains from the Vercel project (or delete it) so traffic stops going there.
 
 ## 3. Things that do NOT move to Netlify
 
-- **Email + payment-expiry workers** (`npm run email:worker:production`,
-  `npm run payments:expire:production`) need an always-on host — same as today,
-  they never ran on Vercel either. Keep them wherever they run now.
+- **Email + payment expiry** now run on Vercel through daily cron routes and
+  checkout-time sending. This Netlify guide does not schedule those routes.
+  The supported host is Vercel.
 - **Admin uploads** (`/api/admin/uploads`): Netlify functions have ephemeral
   disk, so files uploaded via the admin panel won't survive deploys. Keep using
   committed `/menu-art/...` images (the current products already do).
-- **Checkout** stays hard-stopped until the Venmo gates in `VENMO-OPERATIONS.md`
-  are configured and verified — hosting change does not lift that.
+- **Checkout** is not hard-stopped in code. It stays unavailable until the
+  Venmo, email, secret, and smoke-test gates in `VENMO-OPERATIONS.md` pass.
+  Moving hosts does not turn those gates on.
