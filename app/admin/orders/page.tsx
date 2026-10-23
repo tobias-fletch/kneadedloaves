@@ -3,9 +3,11 @@ import { formatMoney } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
 import { requireAdmin } from "@/lib/auth";
 import { AdminOrderActions } from "@/components/AdminOrderActions";
+import { expireUnpaidOrdersOpportunistically } from "@/lib/manual-payments";
 const dateTime = (date: Date) => `${new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(date)} UTC`;
 export default async function AdminOrdersPage({ searchParams }: { searchParams: Promise<{ status?: string; fulfillment?: string; payment?: string }> }) {
   await requireAdmin();
+  await expireUnpaidOrdersOpportunistically();
   const params = await searchParams, status = Object.values(OrderStatus).find(value => value === params.status), fulfillment = Object.values(FulfillmentType).find(value => value === params.fulfillment), paymentState = params.payment === "REVIEW" ? "REVIEW" : undefined;
   const orders = await prisma.order.findMany({ where: { status, fulfillmentType: fulfillment, paymentState }, include: { items: true, orderWindow: true, pickupLocation: true, paymentEvents: { orderBy: { createdAt: "asc" } } }, orderBy: { createdAt: "desc" } }).catch(() => null);
   return <div className="space-y-4">

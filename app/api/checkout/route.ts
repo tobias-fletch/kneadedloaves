@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { cookies } from "next/headers";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getCurrentOrderWindow } from "@/lib/order-window";
 import { prisma } from "@/lib/prisma";
@@ -8,9 +8,11 @@ import { orderSchema } from "@/lib/validation";
 import { cartOwner, acceptsOrders } from "@/lib/order-rules";
 import { readJson, rateLimit } from "@/lib/request";
 import { queueEmail } from "@/lib/email-queue";
+import { processOrderEmails } from "@/lib/email-maintenance";
 import { getManualPaymentConfig } from "@/lib/manual-payment-config";
 import { expireUnpaidOrders } from "@/lib/manual-payments";
 import { formatMoney } from "@/lib/money";
+import { describePickup } from "@/lib/pickup-location";
 import { checkoutDigest as digest, checkoutOwnerHash, checkoutOwners, checkoutRequestHash, lockCheckoutRequest, receiptForOwnedAttempt, validCheckoutKey } from "@/lib/checkout-recovery";
 export async function POST(request: Request) {
   if (!await rateLimit(request, "checkout", 20)) return NextResponse.json({ error: "Please wait before trying checkout again." }, { status: 429 });
@@ -69,7 +71,7 @@ export async function POST(request: Request) {
       }
       const paymentReference = `KL-${randomUUID().toUpperCase()}`;
       const paymentDueAt = new Date(Math.min(now.getTime() + config.holdMinutes * 60000, freshWindow.manualOpen ? Infinity : freshWindow.closesAt.getTime()));
-      const fulfillmentLocation = zone ? `${parsed.data.deliveryAddress}\n${parsed.data.deliveryZip}` : `${pickup!.name}\n${pickup!.address}`;
+      const fulfillmentLocation = zone ? `${parsed.data.deliveryAddress}\n${parsed.data.deliveryZip}` : describePickup(pickup!).text;
       const created = await tx.order.create({ data: {
         userId: session?.sub, checkoutRequestHash: requestHash, checkoutKeyHash, checkoutPayloadHash,
         customerEmail: parsed.data.customerEmail, customerName: parsed.data.customerName, customerPhone: parsed.data.customerPhone,
@@ -86,6 +88,12 @@ export async function POST(request: Request) {
       if (settings?.emailNotificationsEnabled && settings.notificationEmail) await queueEmail({ dedupeKey: `admin-order:${created.id}`, to: settings.notificationEmail, subject: "New bakery reservation awaiting payment", body: `Reservation ${paymentReference} received. Payment is unverified. Check admin orders before the ${paymentDueAt.toISOString()} reservation deadline.` }, tx);
       return receiptForOwnedAttempt(tx, created, key, owners, config.JWT_SECRET);
     });
+    if (process.env.VERCEL) {
+      const orderId = result.orderId;
+      after(() => processOrderEmails(orderId).catch(() => {
+        console.error("Order email could not be sent immediately; the daily email cron will retry.");
+      }));
+    }
     return NextResponse.json({ message: "Reservation received. Payment has not been confirmed.", ...result }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return NextResponse.json({ error: error instanceof Error && !/prisma|database|constraint|connection/i.test(error.message) ? error.message : "Checkout could not be completed. Please retry with the same details." }, { status: 400 });

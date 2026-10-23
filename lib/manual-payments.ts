@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { queueEmail } from "@/lib/email-queue";
+import { runBounded } from "@/lib/worker-batch";
 
 export const paymentEvidenceSchema = z.object({
   action: z.enum(["verify", "review", "refund"]),
@@ -41,6 +42,14 @@ export async function expireUnpaidOrders(now = new Date()) {
   let expired = 0;
   for (const order of due) if (await prisma.$transaction(tx => expireOrder(tx, order.id, now))) expired++;
   return expired;
+}
+export async function expireUnpaidOrdersOpportunistically(now = new Date()) {
+  try { return await expireUnpaidOrders(now); }
+  catch { console.error("Payment expiry check failed."); return 0; }
+}
+export async function runPaymentExpiry(options?: { maxBatches?: number; now?: Date }) {
+  const expired = await runBounded(() => expireUnpaidOrders(options?.now), options?.maxBatches ?? 1);
+  return { expired };
 }
 export async function recordPaymentEvidence(tx: Prisma.TransactionClient, id: string, input: z.infer<typeof paymentEvidenceSchema>, actorId: string, now?: Date) {
   input = paymentEvidenceSchema.parse(input);

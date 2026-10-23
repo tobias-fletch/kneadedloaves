@@ -14,10 +14,14 @@ type Cart = {
 
 export function CartDrawerButton({
   deliveryZones,
-  pickupLocations
+  pickupLocations,
+  checkoutReady = true,
+  contactEmail = ""
 }: {
   deliveryZones: DeliveryZone[];
   pickupLocations: PickupLocation[];
+  checkoutReady?: boolean;
+  contactEmail?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [itemCount, setItemCount] = useState(0);
@@ -68,7 +72,7 @@ export function CartDrawerButton({
             </div>
             <div className="space-y-4 p-4">
               <CartSummary framed={false} onItemCountChange={setItemCount} />
-              <CheckoutForm deliveryZones={deliveryZones} pickupLocations={pickupLocations} framed={false} hasCartItems={itemCount > 0} />
+              <CheckoutForm checkoutReady={checkoutReady} contactEmail={contactEmail} deliveryZones={deliveryZones} pickupLocations={pickupLocations} framed={false} hasCartItems={itemCount > 0} />
             </div>
           </div>
         </div>

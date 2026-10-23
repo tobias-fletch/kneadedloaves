@@ -3,8 +3,10 @@ import Link from "next/link";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import type { DeliveryZone, PickupLocation } from "@prisma/client";
 import { browserCheckoutStorage, CheckoutStorageError, prepareCheckoutAttempt, receiptDestination, recoverCheckoutAttempt, rememberCheckoutOrder } from "@/lib/checkout-recovery-client";
+import { ORDERING_UNAVAILABLE_MESSAGE } from "@/lib/config-messages";
+import { describePickup } from "@/lib/pickup-location";
 
-export function CheckoutForm({ deliveryZones, pickupLocations, framed = true, hasCartItems = true }: { deliveryZones: DeliveryZone[]; pickupLocations: PickupLocation[]; framed?: boolean; hasCartItems?: boolean }) {
+export function CheckoutForm({ deliveryZones, pickupLocations, framed = true, hasCartItems = true, checkoutReady = true, contactEmail = "" }: { deliveryZones: DeliveryZone[]; pickupLocations: PickupLocation[]; framed?: boolean; hasCartItems?: boolean; checkoutReady?: boolean; contactEmail?: string }) {
   const [fulfillment, setFulfillment] = useState<"DELIVERY" | "PICKUP">(pickupLocations.length ? "PICKUP" : "DELIVERY");
   const [message, setMessage] = useState("");
   const [showSignInNudge, setShowSignInNudge] = useState(true);
@@ -40,7 +42,7 @@ export function CheckoutForm({ deliveryZones, pickupLocations, framed = true, ha
     return () => { window.removeEventListener("pageshow", onPageShow); invalidatePendingWork(); };
   }, [checkSavedCheckout, invalidatePendingWork]);
   async function submit(formData: FormData) {
-    if (submittingRef.current || phase !== "ready" || !hasCartItems) return;
+    if (submittingRef.current || phase !== "ready" || !hasCartItems || !checkoutReady) return;
     submittingRef.current = true;
     const generation = ++generationRef.current;
     setPhase("submitting"); setMessage("");
@@ -64,17 +66,18 @@ export function CheckoutForm({ deliveryZones, pickupLocations, framed = true, ha
   }
   if (!hasCartItems && phase === "ready" && !hasSavedAttempt) return null;
   return <form onSubmit={event => { event.preventDefault(); void submit(new FormData(event.currentTarget)); }} className={`${framed ? "panel p-4" : "border-t-2 border-ink pt-4"} space-y-4`}>
-    {hasCartItems ? <fieldset disabled={phase !== "ready"} className="space-y-4">
+    {!checkoutReady ? <p className="border-2 border-ink bg-jam p-3 text-sm font-black" role="status">{ORDERING_UNAVAILABLE_MESSAGE}{contactEmail ? <> Email <a className="underline" href={`mailto:${contactEmail}`}>{contactEmail}</a>.</> : null}</p> : null}
+    {hasCartItems ? <fieldset disabled={phase !== "ready" || !checkoutReady} className="space-y-4">
       <h2 className="font-display text-2xl uppercase tracking-wide">Checkout</h2>
       {showSignInNudge ? <p className="flex items-start justify-between gap-3 border-2 border-ink bg-crumb p-3 text-sm font-medium"><span>Have an account? <Link href="/login" className="font-black underline">Sign in</Link> to link this order to it. Checkout works fine as a guest.</span><button type="button" aria-label="Dismiss" onClick={() => setShowSignInNudge(false)} className="shrink-0 px-1 text-lg font-black">&times;</button></p> : null}
       <div className="grid gap-3 sm:grid-cols-2"><div><label htmlFor="checkout-name">Name</label><input id="checkout-name" name="customerName" autoComplete="name" required /></div><div><label htmlFor="checkout-email">Email</label><input id="checkout-email" name="customerEmail" autoComplete="email" type="email" required /></div></div>
       <div><label htmlFor="checkout-phone">Phone</label><input id="checkout-phone" name="customerPhone" type="tel" autoComplete="tel" /></div>
       <div className="grid grid-cols-2 gap-2"><button type="button" className={fulfillment === "PICKUP" ? "btn-primary" : "btn-secondary"} disabled={!pickupLocations.length} onClick={() => setFulfillment("PICKUP")}>Pickup</button><button type="button" className={fulfillment === "DELIVERY" ? "btn-primary" : "btn-secondary"} disabled={!deliveryZones.length} onClick={() => setFulfillment("DELIVERY")}>Delivery</button></div>
       <input type="hidden" name="fulfillmentType" value={fulfillment} />
-      {fulfillment === "PICKUP" ? <div><label htmlFor="checkout-pickup">Pickup location</label><select id="checkout-pickup" name="pickupLocationId" required>{pickupLocations.map(location => <option value={location.id} key={location.id}>{location.name}</option>)}</select></div> : <><div><label htmlFor="checkout-zone">Delivery zone</label><select id="checkout-zone" name="deliveryZoneId" required>{deliveryZones.map(zone => <option value={zone.id} key={zone.id}>{zone.name}{zone.zipCodes.length ? ` (${zone.zipCodes.join(", ")})` : ""}</option>)}</select></div><div><label htmlFor="checkout-address">Delivery address</label><textarea id="checkout-address" name="deliveryAddress" autoComplete="street-address" required rows={3} /><label>Delivery ZIP code<input name="deliveryZip" required inputMode="numeric" pattern="[0-9]{5}" maxLength={5} autoComplete="postal-code" /></label></div></>}
+      {fulfillment === "PICKUP" ? <div><label htmlFor="checkout-pickup">Pickup location</label><select id="checkout-pickup" name="pickupLocationId" required>{pickupLocations.map(location => { const pickup = describePickup(location); return <option value={location.id} key={location.id}>{pickup.name} — {pickup.address}</option>; })}</select><p className="mt-1 text-xs text-ink/70">Pickup area: {describePickup(pickupLocations[0] ?? { name: "Pickup" }).address}. The bakery confirms the exact spot after payment.</p></div> : <><div><label htmlFor="checkout-zone">Delivery zone</label><select id="checkout-zone" name="deliveryZoneId" required>{deliveryZones.map(zone => <option value={zone.id} key={zone.id}>{zone.name}{zone.zipCodes.length ? ` (${zone.zipCodes.join(", ")})` : ""}</option>)}</select></div><div><label htmlFor="checkout-address">Delivery address</label><textarea id="checkout-address" name="deliveryAddress" autoComplete="street-address" required rows={3} /><label>Delivery ZIP code<input name="deliveryZip" required inputMode="numeric" pattern="[0-9]{5}" maxLength={5} autoComplete="postal-code" /></label></div></>}
       <p className="border-2 border-ink bg-crumb p-3 text-sm">Pay with Venmo after placing your order. Your private order page will show the exact amount, payment reference, and deadline. Placing an order does not charge you or confirm payment. The bakery will check the payment before preparing your order.</p>
       {!canFulfill ? <p className="border-2 border-ink bg-jam p-3 text-sm font-black">Checkout is paused until pickup or delivery is configured.</p> : null}
-      <button className="btn-primary w-full" disabled={phase !== "ready" || !canFulfill}>{phase === "checking" ? "Checking saved checkout..." : phase === "submitting" ? "Creating your order..." : phase === "navigating" ? "Opening your order..." : phase === "blocked" ? "Check saved checkout to continue" : "Place order · Pay with Venmo"}</button>
+      <button className="btn-primary w-full" disabled={phase !== "ready" || !canFulfill || !checkoutReady}>{phase === "checking" ? "Checking saved checkout..." : phase === "submitting" ? "Creating your order..." : phase === "navigating" ? "Opening your order..." : !checkoutReady ? "Online ordering isn't available" : phase === "blocked" ? "Check saved checkout to continue" : "Place order · Pay with Venmo"}</button>
     </fieldset> : phase === "checking" || phase === "navigating" ? <p role="status" className="text-sm font-bold">{phase === "checking" ? "Checking for your saved order..." : "Opening your order..."}</p> : null}
     {message ? <p role="alert" className="border-2 border-ink bg-crumb p-3 text-sm font-bold">{message}</p> : null}
     {phase === "blocked" || (phase === "ready" && hasSavedAttempt) ? <button className="btn-secondary w-full" type="button" onClick={() => { void checkSavedCheckout(); }}>Check my saved checkout{phase === "ready" ? " again" : ""}</button> : null}

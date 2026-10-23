@@ -3,10 +3,12 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSession } from "@/lib/auth";
 import { formatMoney } from "@/lib/money";
+import { expireUnpaidOrdersOpportunistically } from "@/lib/manual-payments";
 import { ManualPaymentInstructions } from "@/components/ManualPaymentInstructions";
 export const metadata = { robots: { index: false, follow: false }, referrer: "no-referrer" as const };
 export default async function Receipt({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ token?: string }> }) {
   const { id } = await params, { token } = await searchParams;
+  await expireUnpaidOrdersOpportunistically();
   const session = await getSession();
   const order = await prisma.order.findUnique({ where: { id }, include: { items: true } });
   const validToken = typeof token === "string" && /^[a-f0-9]{64}$/.test(token) && order?.receiptTokenHash === createHash("sha256").update(token).digest("hex");
