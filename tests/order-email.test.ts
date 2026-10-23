@@ -101,6 +101,11 @@ test("HTML layout is table-based, styled, and escapes user content", () => {
   for (const color of ["#A85A2A", "#D8CDAE", "#E88B4A", "#D9703B", "#55663A", "#3B4527", "#E9E4D3"]) assert.match(email.html, new RegExp(color));
   assert.match(email.html, /Oswald/);
   assert.match(email.html, /Inter/);
+  assert.match(email.html, /src="https:\/\/kneadedloaves\.com\/email\/kl-c1-email-header-600\.png"/);
+  assert.match(email.html, /srcset="https:\/\/kneadedloaves\.com\/email\/kl-c1-email-header-1200@2x\.png 2x"/);
+  assert.match(email.html, /alt="Kneaded Loaves"/);
+  assert.match(email.html, /<img[^>]*width="600"/);
+  assert.doesNotMatch(email.text, /kl-c1-email-header|<img/);
   assert.match(email.html, /Ann &lt;script&gt;alert\(&quot;x&quot;\)&lt;\/script&gt;/);
   assert.match(email.html, /Rye &amp; &lt;b&gt;Honey&lt;\/b&gt;/);
   assert.doesNotMatch(email.html, /<script>alert/);

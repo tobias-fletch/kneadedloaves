@@ -75,6 +75,14 @@ async function main() {
   });
   try {
     const page = await browser.newPage({ viewport: { width: 680, height: 900 }, deviceScaleFactor: 1 });
+    await page.route("https://kneadedloaves.com/email/**", async (route) => {
+      const file = path.resolve("public/email", path.basename(new URL(route.request().url()).pathname));
+      if (!existsSync(file)) {
+        await route.abort();
+        return;
+      }
+      await route.fulfill({ path: file, contentType: "image/png" });
+    });
     for (const [name, email] of samples) {
       const htmlPath = path.join(out, `${name}.html`);
       writeFileSync(htmlPath, email.html);
