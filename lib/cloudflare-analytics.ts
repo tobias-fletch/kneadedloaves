@@ -1,9 +1,17 @@
 /**
  * Cloudflare Web Analytics (cookieless JS beacon).
- * The site token is public, not a secret. The beacon renders only when
- * NEXT_PUBLIC_CF_ANALYTICS_TOKEN is set to a valid token; otherwise nothing loads.
+ * The site token is public, not a secret. The beacon uses NEXT_PUBLIC_CF_ANALYTICS_TOKEN
+ * when it is set, otherwise the committed kneadedloaves.com token below.
  */
 export const CF_BEACON_SRC = "https://static.cloudflareinsights.com/beacon.min.js";
+
+/** Cloudflare Web Analytics site token for kneadedloaves.com (public). */
+export const CF_ANALYTICS_SITE_TOKEN = "447634b9537041c28cc36f327332db2f";
+
+/** The token the beacon uses: NEXT_PUBLIC_CF_ANALYTICS_TOKEN if set, otherwise the committed token. */
+export function beaconTokenForPage(envValue: string | null | undefined = process.env.NEXT_PUBLIC_CF_ANALYTICS_TOKEN) {
+  return cloudflareAnalyticsToken(envValue?.trim() || CF_ANALYTICS_SITE_TOKEN);
+}
 
 export function cloudflareAnalyticsToken(value: string | null | undefined = process.env.NEXT_PUBLIC_CF_ANALYTICS_TOKEN) {
   const token = value?.trim() ?? "";

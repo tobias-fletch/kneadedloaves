@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import robots from "../app/robots";
 import sitemap from "../app/sitemap";
 import { CloudflareAnalytics } from "../components/CloudflareAnalytics";
-import { SEARCH_CONSOLE_VERIFICATION, cloudflareAnalyticsToken, googleSiteVerification, siteVerificationForHead } from "../lib/cloudflare-analytics";
+import { CF_ANALYTICS_SITE_TOKEN, SEARCH_CONSOLE_VERIFICATION, beaconTokenForPage, cloudflareAnalyticsToken, googleSiteVerification, siteVerificationForHead } from "../lib/cloudflare-analytics";
 import { bakeryJsonLd } from "../lib/site";
 
 function withToken(t: test.TestContext, value: string | undefined) {
@@ -14,11 +14,14 @@ function withToken(t: test.TestContext, value: string | undefined) {
   t.after(() => { if (previous === undefined) delete process.env.NEXT_PUBLIC_CF_ANALYTICS_TOKEN; else process.env.NEXT_PUBLIC_CF_ANALYTICS_TOKEN = previous; });
 }
 
-test("Cloudflare beacon renders nothing without a site token", (t) => {
-  withToken(t, undefined);
-  assert.equal(renderToStaticMarkup(createElement(CloudflareAnalytics)), "");
-  withToken(t, "  ");
-  assert.equal(renderToStaticMarkup(createElement(CloudflareAnalytics)), "");
+test("Cloudflare beacon uses the committed kneadedloaves.com token when no env override is set", (t) => {
+  assert.equal(CF_ANALYTICS_SITE_TOKEN, "447634b9537041c28cc36f327332db2f");
+  for (const value of [undefined, "  "]) {
+    withToken(t, value);
+    const html = renderToStaticMarkup(createElement(CloudflareAnalytics));
+    assert.match(html, /data-cf-beacon="\{&quot;token&quot;:&quot;447634b9537041c28cc36f327332db2f&quot;\}"/);
+  }
+  assert.equal(beaconTokenForPage("abc\"><script>"), null);
 });
 
 test("Cloudflare beacon rejects malformed tokens", () => {
