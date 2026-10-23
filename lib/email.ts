@@ -17,7 +17,7 @@ const defaultTemplates = {
   PICKUP: {
     subject: "Your bakery pickup order is confirmed",
     body:
-      `Hi {{customerName}},\n\nThanks for your order #{{orderId}}. We have it down for pickup in ${PICKUP_AREA}.\n\n{{items}}\n\nTotal: {{total}}\n\nPickup area: ${PICKUP_AREA}.\nPickup instructions:\n{{fulfillmentInstructions}}\n\nSee you soon!`
+      `Hi {{customerName}},\n\nThanks for your order #{{orderId}}. We have it down for pickup at ${PICKUP_AREA}.\n\n{{items}}\n\nTotal: {{total}}\n\nPickup: ${PICKUP_AREA}. The bakery confirms the exact handoff after payment.\nPickup instructions:\n{{fulfillmentInstructions}}\n\nSee you soon!`
   },
   DELIVERY: {
     subject: "Your bakery delivery order is confirmed",

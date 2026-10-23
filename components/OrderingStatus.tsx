@@ -25,7 +25,7 @@ export function OrderingUnavailableNotice({ email }: { email?: string | null }) 
 export function PickupAreaNote() {
   return (
     <p className="mt-2 text-sm font-medium text-ink/80">
-      Pickup area: {PICKUP_AREA}. The bakery confirms the exact spot after payment.
+      Pickup: {PICKUP_AREA}. The bakery confirms the exact spot after payment.
     </p>
   );
 }

@@ -54,7 +54,8 @@ test("unavailable ordering hides Orders Open, shows the bakery email, and disabl
   assert.match(html, /Ordering unavailable/);
   assert.match(html, /Online ordering isn(?:'|&#x27;)t available right now/);
   assert.match(html, /kneadedloaves@gmail\.com/);
-  assert.match(html, /11217/);
+  assert.match(html, /S Portland Ave &amp; Atlantic Ave, Brooklyn, NY 11217/);
+  assert.match(html, /The bakery confirms the exact spot after payment/);
   assert.match(html, /disabled=""/);
   assert.doesNotMatch(html, /Orders Open/);
   assert.doesNotMatch(html, /example\.com|CONTACT_PHONE|Phone not set|tel:/);

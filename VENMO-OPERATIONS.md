@@ -2,7 +2,7 @@
 
 ## Disabled until deliberately configured
 
-Checkout is closed until every operational gate in `getManualPaymentConfig()` passes. There is no separate code hard-stop. Vercel environment variables override Admin > Setup. No live payment flag is turned on by a code change. Zelle and automated provider payments are deferred. The owner independently checks the Venmo business account before recording payment or externally performed refunds. The public contact email is kneadedloaves@gmail.com unless `CONTACT_EMAIL` overrides it. Pickup is Brooklyn, NY 11217; a street address is not published.
+Checkout is closed until every operational gate in `getManualPaymentConfig()` passes. There is no separate code hard-stop. Vercel environment variables override Admin > Setup. No live payment flag is turned on by a code change. Zelle and automated provider payments are deferred. The owner independently checks the Venmo business account before recording payment or externally performed refunds. The public contact email is kneadedloaves@gmail.com unless `CONTACT_EMAIL` overrides it. Pickup is S Portland Ave & Atlantic Ave, Brooklyn, NY 11217. The bakery confirms the exact handoff after payment.
 
 Configure the exact copied official receiving URL and business handle, then save a separate destination attestation. Changes invalidate the fingerprint and disable checkout. Set an owner-approved payment hold duration; there is no live default. Configure actual products, pickup/delivery ZIPs and fees, scheduled windows and capacity. A zero maximum means no slots; null means unlimited.
 

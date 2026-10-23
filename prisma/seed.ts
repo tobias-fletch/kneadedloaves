@@ -154,14 +154,14 @@ async function main() {
     where: { id: "seed-pickup" },
     update: {
       name: "Brooklyn pickup",
-      address: "Brooklyn, NY 11217",
-      instructions: "Pickup is in Brooklyn, NY 11217. The bakery confirms the handoff after payment is verified."
+      address: "S Portland Ave & Atlantic Ave, Brooklyn, NY 11217",
+      instructions: "Pickup is at S Portland Ave & Atlantic Ave, Brooklyn, NY 11217. The bakery confirms the handoff after payment is verified."
     },
     create: {
       id: "seed-pickup",
       name: "Brooklyn pickup",
-      address: "Brooklyn, NY 11217",
-      instructions: "Pickup is in Brooklyn, NY 11217. The bakery confirms the handoff after payment is verified."
+      address: "S Portland Ave & Atlantic Ave, Brooklyn, NY 11217",
+      instructions: "Pickup is at S Portland Ave & Atlantic Ave, Brooklyn, NY 11217. The bakery confirms the handoff after payment is verified."
     }
   });
 
@@ -180,13 +180,15 @@ async function main() {
 
   await prisma.adminSettings.upsert({
     where: { id: "default" },
-    update: {},
+    update: {
+      pickupRules: "Pickup is at S Portland Ave & Atlantic Ave, Brooklyn, NY 11217. The exact handoff is confirmed after payment."
+    },
     create: {
       id: "default",
       bakeryName: "Kneaded Loaves",
       businessDescription: "Small-batch breads and pastries baked for limited weekly order windows.",
       deliveryRules: "Delivery is available for approved ZIP codes only.",
-      pickupRules: "Pickup is in Brooklyn, NY 11217. The exact handoff is confirmed after payment.",
+      pickupRules: "Pickup is at S Portland Ave & Atlantic Ave, Brooklyn, NY 11217. The exact handoff is confirmed after payment.",
       instagramHandle: "@littlehearth",
       defaultHashtags: ["#littlehearth", "#microbakery", "#brooklynbread"],
       orderingOpenMessage: "Orders are open for the next bake.",
