@@ -1,4 +1,4 @@
-import { format } from "date-fns";
+import { formatEasternDateTime, formatEasternMonthDay } from "@/lib/format-datetime";
 import { formatMoney } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
 import { getSetupChecklist } from "@/lib/setup-checklist";
@@ -32,7 +32,7 @@ export default async function AdminPage() {
               <div className="rounded-md bg-crumb p-3" key={order.id}>
                 <p className="font-bold">{order.customerName} | {formatMoney(order.totalCents)}</p>
                 <p className="text-xs text-ink/60">
-                  {order.status.replaceAll("_", " ")} | {format(order.createdAt, "MMM d, h:mm a")}
+                  {order.status.replaceAll("_", " ")} | {formatEasternDateTime(order.createdAt)}
                 </p>
               </div>
             ))}
@@ -53,8 +53,8 @@ export default async function AdminPage() {
         <div className="mt-3 grid gap-2">
           {windows.map((window) => (
             <p className="rounded-md border border-amber-200 p-3 text-sm" key={window.id}>
-              <strong>{window.name}</strong> opens {format(window.opensAt, "MMM d, h:mm a")} and fulfills{" "}
-              {format(window.fulfillmentDate, "MMM d")}
+              <strong>{window.name}</strong> opens {formatEasternDateTime(window.opensAt)} and fulfills{" "}
+              {formatEasternMonthDay(window.fulfillmentDate)}
             </p>
           ))}
         </div>

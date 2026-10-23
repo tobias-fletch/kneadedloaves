@@ -45,6 +45,6 @@ test("alternate fulfillment note uses the weekday and the public email", () => {
   const fulfillment = page.indexOf("Fulfillment:");
   const note = page.indexOf("<AlternateFulfillmentNote ");
   assert.ok(fulfillment > 0 && note > fulfillment);
-  assert.match(page, /format\(openWindow\.fulfillmentDate, "EEEE"\)/);
+  assert.match(page, /formatEasternWeekday\(openWindow\.fulfillmentDate\)/);
   assert.equal(page.match(/<AlternateFulfillmentNote /g)?.length, 1);
 });
