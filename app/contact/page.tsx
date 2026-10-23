@@ -1,6 +1,9 @@
 import React from "react";
 import { Instagram, Mail } from "lucide-react";
 import { getContactDetails, instagramProfileUrl } from "@/lib/contact";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { alternates: { canonical: "/contact" } };
 
 export default async function ContactPage() {
   const contact = await getContactDetails();
