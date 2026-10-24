@@ -12,16 +12,22 @@ export function adminNotifyOverride(env: Record<string, string | undefined> = pr
 }
 
 /**
- * Runs right after checkout (processOrderEmails). When ADMIN_NOTIFY_EMAIL is set, admin new-order alerts are on:
- * queue the alert under the same dedupe key checkout uses. If checkout already queued one (AdminSettings enabled),
- * the upsert is a no-op, so nobody is emailed twice. Without the env var nothing happens, exactly as before.
+ * Runs after checkout has committed and responded (processOrderEmails via after()). When ADMIN_NOTIFY_EMAIL is set,
+ * queue the admin new-order alert under checkout's own dedupe key; if checkout already queued one (AdminSettings
+ * enabled) the upsert is a no-op. Without the env var nothing happens, exactly as before.
+ * Fire-and-log: never throws, so an admin alert problem can never affect an order.
  */
 export async function queueAdminOrderFallback(orderId: string, env: Record<string, string | undefined> = process.env) {
-  const to = adminNotifyOverride(env);
-  if (!to) return false;
-  const order = await prisma.order.findUnique({ where: { id: orderId }, include: { items: true } });
-  if (!order) return false;
-  const rendered = renderOrderEmail("admin-new-order", detailsFromOrder(order, await fulfillmentDateFor(prisma, order.orderWindowId)));
-  await queueEmail({ dedupeKey: `admin-order:${order.id}`, to, subject: rendered.subject, body: rendered.text, html: rendered.html });
-  return true;
+  try {
+    const to = adminNotifyOverride(env);
+    if (!to) return false;
+    const order = await prisma.order.findUnique({ where: { id: orderId }, include: { items: true } });
+    if (!order) return false;
+    const rendered = renderOrderEmail("admin-new-order", detailsFromOrder(order, await fulfillmentDateFor(prisma, order.orderWindowId)));
+    await queueEmail({ dedupeKey: `admin-order:${order.id}`, to, subject: rendered.subject, body: rendered.text, html: rendered.html });
+    return true;
+  } catch {
+    console.error("Admin order alert could not be queued; the order is unaffected.");
+    return false;
+  }
 }
