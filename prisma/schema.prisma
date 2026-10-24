@@ -161,6 +161,10 @@ model Order {
   checkoutRequestHash   String?         @unique
   checkoutPayloadHash   String?
   deliveryFeeCents      Int             @default(0)
+  /// Straight-line miles from the bakery. Server/admin only; never sent to customers.
+  deliveryDistanceMiles Float?
+  /// false = address could not be geocoded; the order was charged $6 and must be checked.
+  deliveryDistanceVerified Boolean?
   fulfillmentLocation   String?
   paymentEvents         PaymentEvent[]
   totalCents            Int
