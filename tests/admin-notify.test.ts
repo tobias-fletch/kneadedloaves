@@ -1,24 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { adminNotificationRecipient } from "../lib/admin-notify";
+import { readFileSync } from "node:fs";
+import { adminNotifyOverride, queueAdminOrderFallback } from "../lib/admin-notify";
 
-test("enabled setting with a real address wins over the env fallback", () => {
-  assert.equal(adminNotificationRecipient({ emailNotificationsEnabled: true, notificationEmail: " owner@example.com " }, { ADMIN_NOTIFY_EMAIL: "env@example.com" }), "owner@example.com");
+test("ADMIN_NOTIFY_EMAIL with a real address turns admin alerts on", () => {
+  assert.equal(adminNotifyOverride({ ADMIN_NOTIFY_EMAIL: " kneadedloaves@gmail.com " }), "kneadedloaves@gmail.com");
 });
 
-test("disabled or empty setting falls back to ADMIN_NOTIFY_EMAIL", () => {
-  const env = { ADMIN_NOTIFY_EMAIL: "kneadedloaves@gmail.com" };
-  assert.equal(adminNotificationRecipient({ emailNotificationsEnabled: false, notificationEmail: "owner@example.com" }, env), "kneadedloaves@gmail.com");
-  assert.equal(adminNotificationRecipient({ emailNotificationsEnabled: true, notificationEmail: "" }, env), "kneadedloaves@gmail.com");
-  assert.equal(adminNotificationRecipient(null, env), "kneadedloaves@gmail.com");
+test("unset, blank, invalid or .local ADMIN_NOTIFY_EMAIL changes nothing", () => {
+  for (const value of [undefined, "", "   ", "not-an-email", "admin@bakery.local", "ADMIN@BAKERY.LOCAL"]) {
+    assert.equal(adminNotifyOverride({ ADMIN_NOTIFY_EMAIL: value }), null, String(value));
+  }
 });
 
-test("seed placeholder .local address is never used", () => {
-  assert.equal(adminNotificationRecipient({ emailNotificationsEnabled: true, notificationEmail: "admin@bakery.local" }, {}), null);
-  assert.equal(adminNotificationRecipient({ emailNotificationsEnabled: true, notificationEmail: "admin@bakery.local" }, { ADMIN_NOTIFY_EMAIL: "kneadedloaves@gmail.com" }), "kneadedloaves@gmail.com");
+test("without the env var the fallback is a no-op and never touches the database", async () => {
+  assert.equal(await queueAdminOrderFallback("order-1", {}), false);
+  assert.equal(await queueAdminOrderFallback("order-1", { ADMIN_NOTIFY_EMAIL: "admin@bakery.local" }), false);
 });
 
-test("no setting and no env keeps today's behavior: no admin alert", () => {
-  assert.equal(adminNotificationRecipient({ emailNotificationsEnabled: false, notificationEmail: null }, {}), null);
-  assert.equal(adminNotificationRecipient(undefined, { ADMIN_NOTIFY_EMAIL: "not-an-email" }), null);
+test("fallback reuses checkout's admin-order dedupe key and runs before the post-checkout send", () => {
+  const notify = readFileSync("lib/admin-notify.ts", "utf8");
+  const maintenance = readFileSync("lib/email-maintenance.ts", "utf8");
+  assert.match(notify, /dedupeKey: `admin-order:\$\{order\.id\}`/);
+  assert.match(notify, /renderOrderEmail\("admin-new-order"/);
+  assert.ok(maintenance.indexOf("queueAdminOrderFallback(orderId)") < maintenance.indexOf("processEmailQueue({ dedupeSuffix"));
 });

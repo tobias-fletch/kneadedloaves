@@ -1,24 +1,27 @@
+import { prisma } from "@/lib/prisma";
+import { queueEmail } from "@/lib/email-queue";
+import { detailsFromOrder, fulfillmentDateFor, renderOrderEmail } from "@/lib/order-email";
+
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function usable(value: string | null | undefined) {
-  const address = (value ?? "").trim();
-  // The seed placeholder (admin@bakery.local) and other .local addresses can never be delivered.
+/** ADMIN_NOTIFY_EMAIL when it is a deliverable address; .local placeholders (admin@bakery.local) are ignored. */
+export function adminNotifyOverride(env: Record<string, string | undefined> = process.env) {
+  const address = (env.ADMIN_NOTIFY_EMAIL ?? "").trim();
   if (!EMAIL.test(address) || /\.local$/i.test(address)) return null;
   return address;
 }
 
 /**
- * Who gets admin order alerts. The admin setting wins when it is enabled with a usable address;
- * otherwise ADMIN_NOTIFY_EMAIL (server env) is the fallback so new orders are never silently unannounced.
- * Plain columns and a plain env var: nothing here depends on CONFIG_ENCRYPTION_KEY.
+ * Runs right after checkout (processOrderEmails). When ADMIN_NOTIFY_EMAIL is set, admin new-order alerts are on:
+ * queue the alert under the same dedupe key checkout uses. If checkout already queued one (AdminSettings enabled),
+ * the upsert is a no-op, so nobody is emailed twice. Without the env var nothing happens, exactly as before.
  */
-export function adminNotificationRecipient(
-  settings: { emailNotificationsEnabled?: boolean | null; notificationEmail?: string | null } | null | undefined,
-  env: Record<string, string | undefined> = process.env
-) {
-  if (settings?.emailNotificationsEnabled) {
-    const configured = usable(settings.notificationEmail);
-    if (configured) return configured;
-  }
-  return usable(env.ADMIN_NOTIFY_EMAIL);
+export async function queueAdminOrderFallback(orderId: string, env: Record<string, string | undefined> = process.env) {
+  const to = adminNotifyOverride(env);
+  if (!to) return false;
+  const order = await prisma.order.findUnique({ where: { id: orderId }, include: { items: true } });
+  if (!order) return false;
+  const rendered = renderOrderEmail("admin-new-order", detailsFromOrder(order, await fulfillmentDateFor(prisma, order.orderWindowId)));
+  await queueEmail({ dedupeKey: `admin-order:${order.id}`, to, subject: rendered.subject, body: rendered.text, html: rendered.html });
+  return true;
 }

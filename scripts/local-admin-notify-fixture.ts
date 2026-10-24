@@ -39,26 +39,28 @@ async function order(label: string) {
   console.log(`order ${label}: ${body.orderId} total=$20.00 queued jobs:`, jobs.map((j) => `${j.dedupeKey.split(":")[0]} -> ${j.to}`).join("; "));
 }
 
-async function enable() {
-  // Exactly the proposed production fix (option b).
-  const n = await p.$executeRaw`UPDATE "AdminSettings" SET "emailNotificationsEnabled" = true, "notificationEmail" = 'kneadedloaves@gmail.com', "updatedAt" = NOW()`;
-  console.log(`enable: updated ${n} AdminSettings row(s)`);
-}
-
 async function report(dir: string) {
   const jobs = await p.emailJob.findMany({ orderBy: { createdAt: "asc" }, select: { dedupeKey: true, to: true, status: true, attempts: true } });
   console.log("EmailJob table:"); for (const j of jobs) console.log(`  ${j.dedupeKey.split(":")[0].padEnd(15)} to=${j.to} status=${j.status} attempts=${j.attempts}`);
   const mail = readdirSync(dir).sort().map((f) => JSON.parse(readFileSync(`${dir}/${f}`, "utf8")));
   console.log("SMTP catcher received:"); for (const m of mail) console.log(`  to=${m.to} subject="${m.subject}" tls=${m.tls}`);
-  const admin = mail.filter((m) => m.to === "kneadedloaves@gmail.com");
-  assert.equal(jobs.filter((j) => j.dedupeKey.startsWith("admin-order:")).length, 1, "exactly one admin job (order B only)");
-  assert.equal(admin.length, 1, "exactly one admin email caught");
-  assert.match(admin[0].subject, /New bakery reservation awaiting payment/);
-  assert.match(admin[0].text, /Local customer B/);
-  assert.equal(mail.filter((m) => /customer-[ab]@/.test(m.to)).length, 2, "both customer confirmations sent");
-  console.log("PASS: disabled -> customer email only (reproduces production); enabled -> admin email to kneadedloaves@gmail.com");
+  const expected = process.env.ADMIN_NOTIFY_EMAIL?.trim() || null;
+  const adminJobs = jobs.filter((j) => j.dedupeKey.startsWith("admin-order:"));
+  const admin = mail.filter((m) => /New bakery reservation awaiting payment/.test(m.subject));
+  assert.equal(mail.filter((m) => /customer-a@/.test(m.to)).length, 1, "customer confirmation sent");
+  if (expected) {
+    assert.equal(adminJobs.length, 1, "exactly one admin job");
+    assert.equal(admin.length, 1, "exactly one admin email caught");
+    assert.equal(admin[0].to, expected);
+    assert.match(admin[0].text, /Local customer A/);
+    console.log(`PASS: DB setting OFF + ADMIN_NOTIFY_EMAIL=${expected} -> admin email delivered to ${expected}`);
+  } else {
+    assert.equal(adminJobs.length, 0, "no admin job without the env var");
+    assert.equal(admin.length, 0, "no admin email without the env var");
+    console.log("PASS: DB setting OFF + ADMIN_NOTIFY_EMAIL unset -> customer email only (unchanged behavior)");
+  }
 }
 
 const [cmd, a] = process.argv.slice(2);
-(cmd === "setup" ? setup() : cmd === "order" ? order(a) : cmd === "enable" ? enable() : report(a))
+(cmd === "setup" ? setup() : cmd === "order" ? order(a) : report(a))
   .catch((e) => { console.error(e); process.exitCode = 1; }).finally(() => p.$disconnect());

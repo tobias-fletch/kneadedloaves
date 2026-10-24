@@ -5,7 +5,6 @@ import { prisma } from "@/lib/prisma";
 import { lockOrder } from "@/lib/manual-payments";
 import { rateLimit, readJson } from "@/lib/request";
 import { queueEmail } from "@/lib/email-queue";
-import { adminNotificationRecipient } from "@/lib/admin-notify";
 import { detailsFromOrder, fulfillmentDateFor, renderOrderEmail } from "@/lib/order-email";
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   if (!await rateLimit(request, "payment-review", 20)) return NextResponse.json({ error: "Please wait before trying again." }, { status: 429 });
@@ -22,10 +21,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       await tx.order.update({ where: { id }, data: { paymentReviewRequestedAt: new Date(), paymentState: "REVIEW" } });
       await tx.paymentEvent.create({ data: { orderId: id, type: "CUSTOMER_REVIEW", actorId: session?.sub, note: "Customer reports payment; no payment has been verified." } });
       const settings = await tx.adminSettings.findFirst();
-      const adminTo = adminNotificationRecipient(settings);
-      if (adminTo) {
+      if (settings?.emailNotificationsEnabled && settings.notificationEmail) {
         const rendered = renderOrderEmail("admin-payment-review", detailsFromOrder(order, await fulfillmentDateFor(tx, order.orderWindowId)));
-        await queueEmail({ dedupeKey: `payment-review:${id}`, to: adminTo, subject: rendered.subject, body: rendered.text, html: rendered.html }, tx);
+        await queueEmail({ dedupeKey: `payment-review:${id}`, to: settings.notificationEmail, subject: rendered.subject, body: rendered.text, html: rendered.html }, tx);
       }
     });
     return NextResponse.json({ message: "Review requested. Payment has not been verified; this does not extend your reservation deadline." });
