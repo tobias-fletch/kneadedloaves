@@ -38,7 +38,8 @@ permissions:
   contents: read
 
 env:
-  NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID || 'ancient-term-41675694' }}
+  # Pinned on purpose: this workflow must only ever touch this one Neon project.
+  NEON_PROJECT_ID: ancient-term-41675694
   NEON_API_HOST: https://console.neon.tech/api/v2
 
 jobs:
@@ -90,8 +91,8 @@ jobs:
           if [[ "$neon_branch" != preview/?* ]]; then
             echo "::warning::Refusing '${neon_branch}': not a preview/ branch."; exit 0
           fi
-          if [[ ! "$NEON_PROJECT_ID" =~ ^[a-z0-9-]+$ ]]; then
-            echo "::error::NEON_PROJECT_ID '${NEON_PROJECT_ID}' looks invalid."; exit 1
+          if [[ "$NEON_PROJECT_ID" != "ancient-term-41675694" ]]; then
+            echo "::error::Unexpected NEON_PROJECT_ID '${NEON_PROJECT_ID}'; refusing."; exit 1
           fi
           if [[ -z "${NEON_API_KEY:-}" ]]; then
             echo "::notice::NEON_API_KEY secret is not set; skipping cleanup of ${neon_branch}."
@@ -171,8 +172,8 @@ jobs:
             echo "::notice::NEON_API_KEY secret is not set; skipping prune."
             exit 0
           fi
-          if [[ ! "$NEON_PROJECT_ID" =~ ^[a-z0-9-]+$ ]]; then
-            echo "::error::NEON_PROJECT_ID '${NEON_PROJECT_ID}' looks invalid."; exit 1
+          if [[ "$NEON_PROJECT_ID" != "ancient-term-41675694" ]]; then
+            echo "::error::Unexpected NEON_PROJECT_ID '${NEON_PROJECT_ID}'; refusing."; exit 1
           fi
 
           # Git branches that still exist on GitHub.
