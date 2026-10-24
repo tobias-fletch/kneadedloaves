@@ -8,6 +8,10 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getStorefrontOrderingState } from "@/lib/storefront-ordering";
 import { formatMoney } from "@/lib/money";
+import { bakeryJsonLd } from "@/lib/site";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = { alternates: { canonical: "/" } };
 
 export default async function HomePage() {
   try {
@@ -22,6 +26,7 @@ export default async function HomePage() {
 
     return (
     <main>
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(bakeryJsonLd()).replace(/</g, "\\u003c") }} />
       <section className="border-b-4 border-ink">
         <div className="section py-10">
           <div className="border-4 border-ink bg-crumb p-6 shadow-hard sm:p-10">

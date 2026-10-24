@@ -141,16 +141,16 @@ async function main() {
   await p.product.update({ where: { id: product.id }, data: { inventoryLimit: 100 } });
   const zone = await p.deliveryZone.create({ data: { name: "Synthetic zone", zipCodes: ["12345"], feeCents: 350, instructions: "Synthetic handoff" } });
   const deliveryInput = { ...input, fulfillmentType: "DELIVERY", deliveryZoneId: zone.id, deliveryAddress: "Synthetic address", deliveryZip: "12345" }, deliveryGuest = await cart(2);
-  await status(await checkout(deliveryGuest, randomUUID(), { ...deliveryInput, deliveryZip: "99999" }), 400); await p.deliveryZone.update({ where: { id: zone.id }, data: { active: false } }); await status(await checkout(deliveryGuest, randomUUID(), deliveryInput), 400); await p.deliveryZone.update({ where: { id: zone.id }, data: { active: true } });
+  await status(await checkout(deliveryGuest, randomUUID(), { ...deliveryInput, deliveryZip: "9999" }), 400); await status(await checkout(deliveryGuest, randomUUID(), { ...deliveryInput, deliveryAddress: "  " }), 400);
   const deliveryReceipt = await (await status(await checkout(deliveryGuest, randomUUID(), { ...deliveryInput, totalCents: 1, deliveryFeeCents: 0, currency: "EUR", paymentDestination: "https://untrusted.example/pay", paymentHandle: "@attacker", status: "PAID" }), 200)).json();
   const delivery = await p.order.findUniqueOrThrow({ where: { id: deliveryReceipt.orderId }, include: { items: true } });
-  assert.equal(delivery.totalCents, 2350); assert.equal(delivery.deliveryFeeCents, 350); assert.equal(delivery.items[0].quantity, 2); assert.equal(delivery.items[0].unitPriceCents, 1000); assert.equal(delivery.paymentDestination, config.VENMO_DESTINATION); assert.equal(delivery.paymentHandle, config.VENMO_HANDLE); assert.equal(delivery.currency, "USD"); assert.equal(delivery.status, "PENDING");
-  pass("canonical delivery quantity/fee, invalid ZIP/inactive zone and client tampering");
+  assert.equal(delivery.totalCents, 2600); assert.equal(delivery.deliveryFeeCents, 600); assert.equal(delivery.deliveryDistanceVerified, false); assert.equal(delivery.deliveryDistanceMiles, null); assert.equal(delivery.deliveryZoneId, null); assert.equal(delivery.items[0].quantity, 2); assert.equal(delivery.items[0].unitPriceCents, 1000); assert.equal(delivery.paymentDestination, config.VENMO_DESTINATION); assert.equal(delivery.paymentHandle, config.VENMO_HANDLE); assert.equal(delivery.currency, "USD"); assert.equal(delivery.status, "PENDING");
+  pass("canonical delivery quantity/fee, unverified-distance $6 flag, invalid ZIP and client tampering");
 
   await status(await request("/api/admin/setup", { values: [{ key: "VENMO_HANDLE", value: "@Synthetic-QA-New" }, { key: "VENMO_DESTINATION", value: "https://venmo.com/Synthetic-QA-New" }, { key: "VENMO_DESTINATION_VERIFIED", value: "true" }, { key: "VENMO_CHECKOUT_ENABLED", value: "true" }] }, adminCookie), 200);
   for (const key of ["VENMO_CHECKOUT_ENABLED", "VENMO_DESTINATION_VERIFIED"]) assert.equal((await p.appConfig.findUniqueOrThrow({ where: { key } })).value, "false"); assert.equal((await p.appConfig.findUniqueOrThrow({ where: { key: "VENMO_VERIFIED_FINGERPRINT" } })).value, "");
   const blockedGuest = await cart(); await status(await checkout(blockedGuest), 503); assert.equal((await getOrder(delivery.id)).paymentDestination, config.VENMO_DESTINATION); await restoreConfig();
-  await p.product.update({ where: { id: product.id }, data: { priceCents: 1100 } }); await p.deliveryZone.update({ where: { id: zone.id }, data: { feeCents: 999 } }); assert.equal((await getOrder(delivery.id)).totalCents, 2350); assert.equal((await getOrder(delivery.id)).deliveryFeeCents, 350); await p.product.update({ where: { id: product.id }, data: { priceCents: 1000 } });
+  await p.product.update({ where: { id: product.id }, data: { priceCents: 1100 } }); await p.deliveryZone.update({ where: { id: zone.id }, data: { feeCents: 999 } }); assert.equal((await getOrder(delivery.id)).totalCents, 2600); assert.equal((await getOrder(delivery.id)).deliveryFeeCents, 600); await p.product.update({ where: { id: product.id }, data: { priceCents: 1000 } });
   pass("admin destination change revokes readiness while existing prices/destination remain immutable");
 
   const due = await fixture(-1); await p.orderWindow.update({ where: { id: window.id }, data: { maxOrders: await capacity() } }); await status(await checkout(blockedGuest), 200); assert.equal((await getOrder(due.id)).status, "CANCELLED"); await p.orderWindow.update({ where: { id: window.id }, data: { maxOrders: 100 } });
@@ -162,10 +162,10 @@ async function main() {
   pass("cancellation restores once and serializes against payment verification");
 
   await assert.rejects(p.$transaction(tx => changeOrderStatus(tx, first.id, "READY", admin.id))); for (const next of ["PREPARING", "READY"] as const) await p.$transaction(tx => changeOrderStatus(tx, first.id, next, admin.id)); await assert.rejects(p.$transaction(tx => changeOrderStatus(tx, first.id, "OUT_FOR_DELIVERY", admin.id))); await p.$transaction(tx => changeOrderStatus(tx, first.id, "COMPLETED", admin.id));
-  await p.$transaction(tx => recordPaymentEvidence(tx, delivery.id, { ...evidence(), amountCents: 2350 }, admin.id)); for (const next of ["PREPARING", "READY", "OUT_FOR_DELIVERY", "COMPLETED"] as const) await p.$transaction(tx => changeOrderStatus(tx, delivery.id, next, admin.id));
+  await p.$transaction(tx => recordPaymentEvidence(tx, delivery.id, { ...evidence(), amountCents: 2600 }, admin.id)); for (const next of ["PREPARING", "READY", "OUT_FOR_DELIVERY", "COMPLETED"] as const) await p.$transaction(tx => changeOrderStatus(tx, delivery.id, next, admin.id));
   pass("verified pickup/delivery follow guarded fulfillment sequence");
 
-  const completedCapacity = await capacity(), completedStock = await stock(); await p.$transaction(tx => recordPaymentEvidence(tx, delivery.id, { ...evidence(), action: "refund", amountCents: 2350, note: "External refund after completed delivery", restock: false }, admin.id));
+  const completedCapacity = await capacity(), completedStock = await stock(); await p.$transaction(tx => recordPaymentEvidence(tx, delivery.id, { ...evidence(), action: "refund", amountCents: 2600, note: "External refund after completed delivery", restock: false }, admin.id));
   assert.equal((await getOrder(delivery.id)).status, "COMPLETED"); assert.equal((await getOrder(delivery.id)).paymentState, "REFUNDED"); assert.equal((await getOrder(delivery.id)).inventoryRestored, false); assert.equal(await capacity(), completedCapacity); assert.equal(await stock(), completedStock);
   pass("completed-order refund preserves fulfilled history, capacity and stock");
 

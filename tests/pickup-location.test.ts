@@ -50,7 +50,6 @@ test("default pickup email template includes the cross streets and the handoff n
 
 test("checkout shows the cross streets and keeps the handoff note", () => {
   const html = renderToStaticMarkup(createElement(CheckoutForm, {
-    deliveryZones: [],
     pickupLocations: [{
       id: "seed-pickup",
       name: "Brooklyn pickup",
