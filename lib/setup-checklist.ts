@@ -3,6 +3,7 @@ import { ENCRYPTION_KEY_MISCONFIGURED_MESSAGE, UNDECRYPTABLE_SETTING_MESSAGE } f
 import { paymentConfigKeys, paymentReadiness } from "@/lib/manual-payment-config";
 import { prisma } from "@/lib/prisma";
 import { configEncryptionKeyStatus } from "@/lib/secrets";
+import { originFromEnv } from "@/lib/delivery-distance";
 
 type SetupItem = {
   id: string;
@@ -28,7 +29,6 @@ export async function getSetupChecklist() {
     productImages,
     activeWindows,
     futureWindows,
-    deliveryZones,
     pickupLocations,
     socialAccounts,
     subscribers
@@ -53,11 +53,11 @@ export async function getSetupChecklist() {
         opensAt: { gt: new Date() }
       }
     }),
-    prisma.deliveryZone.count({ where: { active: true } }),
     prisma.pickupLocation.count({ where: { active: true } }),
     prisma.socialPlatformAccount.count({ where: { connected: true } }),
     prisma.emailSubscriber.count({ where: { active: true } })
   ]);
+  const deliveryOriginConfigured = originFromEnv() !== null;
 
   const configRead = await readAppConfig([
     ...paymentConfigKeys,
@@ -136,16 +136,16 @@ export async function getSetupChecklist() {
       id: "fulfillment-method",
       group: "Fulfillment",
       title: "Confirm pickup or delivery options",
-      detail: "Create at least one active pickup location or delivery zone.",
+      detail: "Create at least one active pickup location. Delivery is priced by distance (free within 1 mile, $6 up to 3 miles).",
       href: "/admin/windows",
-      complete: pickupLocations > 0 || deliveryZones > 0
+      complete: pickupLocations > 0 || deliveryOriginConfigured
     },
     {
-      id: "delivery-zones",
+      id: "delivery-distance",
       group: "Fulfillment",
-      title: "Add delivery zones if you deliver",
-      detail: "Define ZIP codes and fees for local delivery, or keep pickup-only intentionally.",
-      complete: deliveryZones > 0
+      title: "Configure distance-based delivery",
+      detail: "Free delivery within 1 mile, $6 up to 3 miles. Set the server-only KL_ORIGIN_LATLNG environment variable (bakery coordinates) in Vercel so delivery distances can be verified.",
+      complete: deliveryOriginConfigured
     },
     {
       id: "email-provider",

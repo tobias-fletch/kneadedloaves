@@ -117,7 +117,7 @@ test("admin test banner is exact, and signed-out checkout stays unavailable", ()
   assert.equal(ADMIN_CHECKOUT_BLOCKED_LEAD, "Admin checkout is still blocked. Fix these in Admin > Setup:");
   assert.doesNotMatch(blocked, /Venmo checkout is disabled|workers must be configured|Checkout testing must be confirmed/);
   const adminCheckout = renderToStaticMarkup(createElement(CheckoutForm, {
-    deliveryZones: [], pickupLocations: [], checkoutReady: true, adminTestMode: true, hasCartItems: true, contactEmail: BAKERY_CONTACT_EMAIL
+    pickupLocations: [], checkoutReady: true, adminTestMode: true, hasCartItems: true, contactEmail: BAKERY_CONTACT_EMAIL
   }));
   assert.match(adminCheckout, /ADMIN TEST MODE:/);
   assert.doesNotMatch(adminCheckout, /Online ordering isn(?:'|&#x27;)t available right now/);
@@ -125,7 +125,7 @@ test("admin test banner is exact, and signed-out checkout stays unavailable", ()
     createElement(OrderingBadge, { orderingOpen: false, unavailable: true }),
     createElement(OrderingUnavailableNotice, { email: BAKERY_CONTACT_EMAIL }),
     createElement(AddToCartButton, { productId: "loaf", disabled: true }),
-    createElement(CheckoutForm, { deliveryZones: [], pickupLocations: [], checkoutReady: false, hasCartItems: true, contactEmail: BAKERY_CONTACT_EMAIL })
+    createElement(CheckoutForm, { pickupLocations: [], checkoutReady: false, hasCartItems: true, contactEmail: BAKERY_CONTACT_EMAIL })
   ));
   assert.match(publicCheckout, /Ordering unavailable/);
   assert.match(publicCheckout, new RegExp(ORDERING_UNAVAILABLE_MESSAGE.replace("'", "(?:'|&#x27;)")));
