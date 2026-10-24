@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { after, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { getCurrentOrderWindow } from "@/lib/order-window";
+import { checkoutClosedMessage } from "@/lib/weekly-window";
 import { prisma } from "@/lib/prisma";
 import { orderSchema } from "@/lib/validation";
 import { cartOwner, acceptsOrders } from "@/lib/order-rules";
@@ -55,8 +56,9 @@ export async function POST(request: Request) {
       const cart = await tx.cart.findUnique({ where: owner });
       if (!cart) throw new Error("Your cart is empty.");
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${cart.id}))`;
-      const { openWindow } = await getCurrentOrderWindow(tx);
-      if (!openWindow) throw new Error("Ordering is currently closed or full.");
+      // Server-side window check: outside the (weekly or one-off) window, no order is created.
+      const { openWindow, weekly } = await getCurrentOrderWindow(tx);
+      if (!openWindow) throw new Error(checkoutClosedMessage(weekly));
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`window:${openWindow.id}`}))`;
       const now = new Date();
       const freshWindow = await tx.orderWindow.findUniqueOrThrow({ where: { id: openWindow.id } });

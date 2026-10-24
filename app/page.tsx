@@ -8,6 +8,7 @@ import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getStorefrontOrderingState } from "@/lib/storefront-ordering";
 import { formatMoney } from "@/lib/money";
+import { WeeklyWindowNotice } from "@/components/WeeklyWindowNotice";
 import { bakeryJsonLd } from "@/lib/site";
 import type { Metadata } from "next";
 
@@ -22,7 +23,8 @@ export default async function HomePage() {
       prisma.product.findMany({ where: { active: true }, include: { images: true, category: true }, orderBy: { name: "asc" } }),
       prisma.popupEvent.findMany({ where: { startsAt: { gte: new Date() } }, take: 3, orderBy: { startsAt: "asc" } })
     ]);
-    const { openWindow, nextWindow, orderingOpen, unavailable, contact, adminTestMode, adminSetupReasons } = ordering;
+    const { openWindow, nextWindow, weekly, orderingOpen, unavailable, contact, adminTestMode, adminSetupReasons } = ordering;
+    const weeklyFull = weekly?.status === "open" && !openWindow;
 
     return (
     <main>
@@ -47,13 +49,13 @@ export default async function HomePage() {
                   {openWindow ? settings?.orderingOpenMessage : settings?.orderingClosedMessage}
                 </p>
               )}
-              <p className="font-display mt-1 text-2xl uppercase tracking-wide">
+              {weekly ? <WeeklyWindowNotice resolution={weekly} full={weeklyFull} variant="hero" /> : <p className="font-display mt-1 text-2xl uppercase tracking-wide">
                 {openWindow
                   ? `Fulfillment: ${formatEasternDay(openWindow.fulfillmentDate)}`
                   : nextWindow
                     ? `Next opens: ${formatEasternDateTime(nextWindow.opensAt)}`
                     : "Next window coming soon"}
-              </p>
+              </p>}
               {openWindow ? <AlternateFulfillmentNote day={formatEasternWeekday(openWindow.fulfillmentDate)} email={contact.email} /> : null}
               <PickupAreaNote />
             </div>
@@ -70,7 +72,7 @@ export default async function HomePage() {
               <h2 className="font-display mt-3 text-4xl uppercase tracking-wide text-ink sm:text-5xl">Weekly menu</h2>
               {adminTestMode || adminSetupReasons.length > 0 ? <div className="mt-2"><AdminOrderingBanner testMode={adminTestMode} reasons={adminSetupReasons} /></div> : null}
               {adminSetupReasons.length > 0 ? null : unavailable ? <div className="mt-2"><OrderingUnavailableNotice email={contact.email} /></div> : (
-                <p className="mt-2 text-sm font-medium text-ink/70">
+                weekly ? <div className="mt-2"><WeeklyWindowNotice resolution={weekly} full={weeklyFull} variant="inline" /></div> : <p className="mt-2 text-sm font-medium text-ink/70">
                   {orderingOpen
                     ? `Checkout is open until ${formatEasternDateTime(openWindow!.closesAt)}. Fulfillment is ${formatEasternDay(openWindow!.fulfillmentDate)}.`
                     : nextWindow
