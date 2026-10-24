@@ -42,7 +42,7 @@ async function order(label: string) {
 async function report(dir: string) {
   const jobs = await p.emailJob.findMany({ orderBy: { createdAt: "asc" }, select: { dedupeKey: true, to: true, status: true, attempts: true } });
   console.log("EmailJob table:"); for (const j of jobs) console.log(`  ${j.dedupeKey.split(":")[0].padEnd(15)} to=${j.to} status=${j.status} attempts=${j.attempts}`);
-  const mail = readdirSync(dir).sort().map((f) => JSON.parse(readFileSync(`${dir}/${f}`, "utf8")));
+  const mail = readdirSync(dir).filter((f) => f.endsWith(".json")).sort().map((f) => JSON.parse(readFileSync(`${dir}/${f}`, "utf8")));
   console.log("SMTP catcher received:"); for (const m of mail) console.log(`  to=${m.to} subject="${m.subject}" tls=${m.tls}`);
   const expected = process.env.ADMIN_NOTIFY_EMAIL?.trim() || null;
   const adminJobs = jobs.filter((j) => j.dedupeKey.startsWith("admin-order:"));
