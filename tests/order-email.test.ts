@@ -213,7 +213,8 @@ test("order email call sites keep recipients, dedupe keys, and the admin test pr
   assert.match(checkout, /dedupeKey: `order-received:\$\{created\.id\}`/);
   assert.match(checkout, /dedupeKey: `admin-order:\$\{created\.id\}`/);
   assert.match(checkout, /to: created\.customerEmail/);
-  assert.match(checkout, /to: settings\.notificationEmail/);
+  assert.match(checkout, /const adminTo = adminNotificationRecipient\(settings\)/);
+  assert.match(checkout, /to: adminTo/);
   assert.match(checkout, /isAdminTestOrder\(config, isAdmin\) \? "KL-ADMIN-TEST-" : "KL-"/);
   assert.doesNotMatch(checkout, /toISOString|formatMoney/);
   assert.match(payments, /renderOrderEmail\(kind/);
@@ -223,7 +224,8 @@ test("order email call sites keep recipients, dedupe keys, and the admin test pr
   assert.doesNotMatch(payments, /toISOString/);
   assert.match(review, /renderOrderEmail\("admin-payment-review"/);
   assert.match(review, /dedupeKey: `payment-review:\$\{id\}`/);
-  assert.match(review, /to: settings\.notificationEmail/);
+  assert.match(review, /const adminTo = adminNotificationRecipient\(settings\)/);
+  assert.match(review, /to: adminTo/);
   assert.match(queue, /message\.html = job\.html/);
   assert.match(queue, /RETURNING "id", "to", "subject", "body", "html", "attempts"/);
 });

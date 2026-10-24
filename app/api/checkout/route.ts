@@ -8,6 +8,7 @@ import { orderSchema } from "@/lib/validation";
 import { cartOwner, acceptsOrders } from "@/lib/order-rules";
 import { readJson, rateLimit } from "@/lib/request";
 import { queueEmail } from "@/lib/email-queue";
+import { adminNotificationRecipient } from "@/lib/admin-notify";
 import { processOrderEmails } from "@/lib/email-maintenance";
 import { adminCheckoutReadiness, getManualPaymentConfig, isAdminTestOrder } from "@/lib/manual-payment-config";
 import { expireUnpaidOrders } from "@/lib/manual-payments";
@@ -106,9 +107,10 @@ export async function POST(request: Request) {
       const customerMessage = renderOrderEmail("customer-reservation", emailDetails);
       await queueEmail({ dedupeKey: `order-received:${created.id}`, to: created.customerEmail, subject: customerMessage.subject, body: customerMessage.text, html: customerMessage.html }, tx);
       const settings = await tx.adminSettings.findFirst();
-      if (settings?.emailNotificationsEnabled && settings.notificationEmail) {
+      const adminTo = adminNotificationRecipient(settings);
+      if (adminTo) {
         const adminMessage = renderOrderEmail("admin-new-order", emailDetails);
-        await queueEmail({ dedupeKey: `admin-order:${created.id}`, to: settings.notificationEmail, subject: adminMessage.subject, body: adminMessage.text, html: adminMessage.html }, tx);
+        await queueEmail({ dedupeKey: `admin-order:${created.id}`, to: adminTo, subject: adminMessage.subject, body: adminMessage.text, html: adminMessage.html }, tx);
       }
       return receiptForOwnedAttempt(tx, created, key, owners, config.JWT_SECRET);
     });
