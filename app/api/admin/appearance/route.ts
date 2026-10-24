@@ -3,6 +3,7 @@ import { z } from "zod";
 import { requireAdmin } from "@/lib/auth";
 import { defaultAppearance, keyByField } from "@/lib/appearance";
 import { prisma } from "@/lib/prisma";
+import { DELIVERY_FEE_COPY } from "@/lib/delivery-pricing";
 
 const fontValues = [
   "system-ui, sans-serif",
@@ -52,7 +53,7 @@ export async function POST(request: Request) {
     await prisma.adminSettings.create({
       data: {
         ...settingsData,
-        deliveryRules: "Delivery options will be shared during checkout.",
+        deliveryRules: DELIVERY_FEE_COPY,
         pickupRules: "Pickup details will be shared after ordering.",
         defaultHashtags: []
       }

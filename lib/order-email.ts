@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { BAKERY_CONTACT_EMAIL } from "@/lib/config-messages";
+import { customerVisibleInstructions, DISTANCE_NOT_VERIFIED_EMAIL_LINE, hasLegacyDistanceNote } from "@/lib/delivery-pricing";
 import { formatDeadline, formatFulfillmentDate } from "@/lib/format-datetime";
 import { formatMoney } from "@/lib/money";
 import { PICKUP_AREA } from "@/lib/pickup-location";
@@ -36,6 +37,8 @@ export type OrderEmailDetails = {
   paymentHandle?: string | null;
   paymentDestination?: string | null;
   paymentDueAt?: Date | null;
+  /** Delivery distance could not be verified. Shown only in the admin new-order email. */
+  distanceUnverified?: boolean;
 };
 
 export type OrderEmailKind = "customer-reservation" | "admin-new-order" | "payment-verified" | "reservation-expired" | "admin-payment-review";
@@ -155,13 +158,16 @@ export function detailsFromOrder(order: {
   };
 }
 
-function fulfillmentCopy(details: OrderEmailDetails) {
+function fulfillmentCopy(details: OrderEmailDetails, kind: OrderEmailKind) {
   const date = dated(details.fulfillmentDate, formatFulfillmentDate, "We'll confirm the date with you.");
-  const notes = clean(details.fulfillmentInstructions);
+  // The admin-only distance note never reaches an email body as instructions; the admin email gets its own line below.
+  const notes = clean(customerVisibleInstructions(details.fulfillmentInstructions));
   if (details.fulfillmentType === "DELIVERY") {
     const address = clean(details.deliveryAddress) || "The delivery address is on the bakery order.";
     const zip = clean(details.deliveryZip);
     const lines = [address, zip ? `ZIP ${zip}` : "ZIP is on the bakery order.", date];
+    const unverified = details.distanceUnverified === true || hasLegacyDistanceNote(details.fulfillmentInstructions);
+    if (kind === "admin-new-order" && unverified) lines.push(DISTANCE_NOT_VERIFIED_EMAIL_LINE);
     if (notes) lines.push(notes);
     return { heading: "DELIVERY" as const, lines };
   }
@@ -184,7 +190,7 @@ function buildModel(kind: OrderEmailKind, details: OrderEmailDetails): EmailMode
   const when = details.fulfillmentType === "DELIVERY" ? "delivery" : "pickup";
   const testOrder = clean(details.paymentReference).startsWith(ADMIN_TEST_REFERENCE_PREFIX);
   const link = publicVenmoLink(details.paymentDestination);
-  const fulfillment = fulfillmentCopy(details);
+  const fulfillment = fulfillmentCopy(details, kind);
   const unpaid = kind === "customer-reservation" || kind === "admin-new-order";
   const greeting = greetingFor(kind, name, when);
   const paymentRows: Row[] = [
