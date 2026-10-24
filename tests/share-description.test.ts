@@ -6,8 +6,11 @@ import { SHARE_DESCRIPTION } from "../lib/site-metadata";
 test("share description is short, public-facing, and states real ordering facts", () => {
   assert.ok(SHARE_DESCRIPTION.length <= 155, `too long: ${SHARE_DESCRIPTION.length}`);
   assert.match(SHARE_DESCRIPTION, /Brooklyn/);
-  assert.match(SHARE_DESCRIPTION, /11217/);
-  assert.match(SHARE_DESCRIPTION, /Venmo/);
+  assert.equal(
+    SHARE_DESCRIPTION,
+    "Fresh small-batch breads and pastries, baked with care in Brooklyn. Order online for the weekly bake, with pickup or local delivery.",
+  );
+  assert.match(SHARE_DESCRIPTION, /pickup or local delivery/);
   assert.doesNotMatch(SHARE_DESCRIPTION, /admin|dashboard/i);
 });
 
