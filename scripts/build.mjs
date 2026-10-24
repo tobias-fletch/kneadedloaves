@@ -172,14 +172,58 @@ export function redactDiagnostics(output, env = {}) {
   return excerpt;
 }
 
-export function runBuild({ root = process.cwd(), env = process.env, run = spawnSync, log = console.log, diagnostic = console.error } = {}) {
+// Prisma error codes that mean "try again shortly", never "the migration is bad":
+// P1001 can't reach the server (Neon compute waking), P1002 timed out (including
+// migrate's 10s pg_advisory_lock wait), P1017 the server closed the connection.
+export const TRANSIENT_MIGRATE_ERRORS = Object.freeze(["P1001", "P1002", "P1017"]);
+export const MIGRATE_RETRY_DELAYS_MS = Object.freeze([5000, 15000]);
+
+/** Only the Prisma error code (e.g. P1002) is ever surfaced from a database step. */
+export function prismaErrorCode(output) {
+  return String(output || "").match(/\bP[0-9]{4}\b/)?.[0];
+}
+
+/**
+ * Same database, same credentials, direct (session) endpoint. Neon's pooler
+ * runs PgBouncer in transaction mode, which cannot hold the session-level
+ * advisory lock that `prisma migrate deploy` takes: the lock can be left on a
+ * pooled server connection and the next deploy waits 10s and fails (P1002).
+ * Only the "-pooler" suffix of a Neon endpoint host is removed; any other URL is
+ * returned unchanged. connect_timeout is raised so a suspended compute can wake.
+ */
+export function migrationDatabaseUrl(databaseUrl) {
+  const url = new URL(databaseUrl);
+  const [endpoint, ...domain] = url.hostname.split(".");
+  if (endpoint.endsWith("-pooler") && /(^|\.)neon\.tech$/.test(domain.join("."))) {
+    url.hostname = [endpoint.slice(0, -"-pooler".length), ...domain].join(".");
+    url.searchParams.delete("pgbouncer");
+  }
+  if (!url.searchParams.has("connect_timeout")) url.searchParams.set("connect_timeout", "30");
+  return url.toString();
+}
+
+const sleepSync = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+
+export function runBuild({ root = process.cwd(), env = process.env, run = spawnSync, log = console.log, diagnostic = console.error, sleep = sleepSync } = {}) {
   const prisma = path.join(root, "node_modules", "prisma", "build", "index.js");
   const next = path.join(root, "node_modules", "next", "dist", "bin", "next");
   // Database steps (historyCheck or a dedicated databaseEnv) never forward output.
   // Only non-database steps opt in with showDiagnostics, and even then the
   // output is redacted and truncated before it is printed.
-  const step = (label, executable, args, commandEnv = env, input, historyCheck = false, showDiagnostics = false) => {
+  const step = (label, executable, args, commandEnv = env, input, historyCheck = false, showDiagnostics = false, retryDelays = []) => {
     log(label);
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return runOnce(label, executable, args, commandEnv, input, historyCheck, showDiagnostics);
+      } catch (error) {
+        const delay = retryDelays[attempt];
+        if (delay === undefined || !TRANSIENT_MIGRATE_ERRORS.includes(error.prismaCode)) throw error;
+        log(`${label}: transient database error ${error.prismaCode}; retrying in ${Math.round(delay / 1000)}s (attempt ${attempt + 2} of ${retryDelays.length + 1})`);
+        sleep(delay);
+      }
+    }
+  };
+  const runOnce = (label, executable, args, commandEnv, input, historyCheck, showDiagnostics) => {
     let result;
     try {
       result = run(process.execPath, [executable, ...args], {
@@ -199,7 +243,10 @@ export function runBuild({ root = process.cwd(), env = process.env, run = spawnS
         const excerpt = redactDiagnostics(output, commandEnv);
         if (excerpt) diagnostic(`${label} output (redacted, last ${DIAGNOSTIC_MAX_LINES} lines max):\n${excerpt}`);
       }
-      throw new Error(reason ? reason[1] : `${label} failed. Check connectivity, database permissions, migration history, and the build environment in a trusted session; the release was stopped.`);
+      const code = prismaErrorCode(output);
+      const error = new Error(reason ? reason[1] : `${label} failed${code ? ` (Prisma ${code})` : ""}. Check connectivity, database permissions, migration history, and the build environment in a trusted session; the release was stopped.`);
+      error.prismaCode = code;
+      throw error;
     }
   };
   // Production database commands run only on a real production deploy:
@@ -215,11 +262,13 @@ export function runBuild({ root = process.cwd(), env = process.env, run = spawnS
     let parsed;
     try { parsed = new URL(databaseUrl); } catch { throw new Error("The production database connection is invalid; no database command was run."); }
     if (!["postgres:", "postgresql:"].includes(parsed.protocol)) throw new Error("The production database connection must use PostgreSQL; no database command was run.");
-    const databaseEnv = { ...env, DATABASE_URL: databaseUrl };
+    const databaseEnv = { ...env, DATABASE_URL: migrationDatabaseUrl(databaseUrl) };
     const plan = readMigrationPlan(root);
     const execute = ["db", "execute", "--schema", "prisma/schema.prisma", "--stdin"];
     step("Checking production migration history (read-only)", prisma, execute, databaseEnv, migrationHistorySql(plan), true);
-    step("Applying reviewed production migrations", prisma, ["migrate", "deploy", "--schema", "prisma/schema.prisma"], databaseEnv);
+    // migrate deploy is idempotent (applied migrations are skipped, each runs in
+    // its own transaction), so only connection/lock timeouts are retried.
+    step("Applying reviewed production migrations", prisma, ["migrate", "deploy", "--schema", "prisma/schema.prisma"], databaseEnv, undefined, false, false, MIGRATE_RETRY_DELAYS_MS);
     step("Verifying completed production migrations (read-only)", prisma, execute, databaseEnv, migrationHistorySql(plan, true), true);
   } else {
     log("Skipping database migrations outside a production deploy.");
