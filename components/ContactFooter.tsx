@@ -1,6 +1,6 @@
-import Link from "next/link";
 import React from "react";
-import { Instagram, MessageCircle } from "lucide-react";
+import { Instagram } from "lucide-react";
+import { ContactFooterButton } from "@/components/ContactFooterButton";
 import { instagramProfileUrl, type ContactDetails } from "@/lib/contact";
 
 export function ContactFooter({ contact }: { contact: ContactDetails }) {
@@ -29,10 +29,7 @@ export function ContactFooter({ contact }: { contact: ContactDetails }) {
                 @{contact.instagramHandle}
               </a>
             ) : null}
-            <Link className="btn-primary w-full sm:w-auto" href="/contact">
-              <MessageCircle size={18} aria-hidden="true" />
-              Contact
-            </Link>
+            <ContactFooterButton href="/contact" />
           </div>
         </div>
       </div>

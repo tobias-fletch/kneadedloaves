@@ -104,8 +104,10 @@ test("parsing and display do not depend on the server TZ", () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const moduleUrl = new URL("../lib/format-datetime.ts", import.meta.url).href;
   for (const TZ of ["UTC", "Pacific/Honolulu", "Asia/Tokyo", "Europe/London"]) {
-    const result = spawnSync(process.execPath, ["--import", "tsx", "-e", `
-      import { parseEasternDateTimeLocal, formatEasternDateTime, toEasternDateTimeLocal } from ${JSON.stringify(moduleUrl)};
+    const result = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
+      // Dynamic import: tsx may load the .ts file as CommonJS (Node < 22.12), where named ESM imports fail.
+      const loaded = await import(${JSON.stringify(moduleUrl)});
+      const { parseEasternDateTimeLocal, formatEasternDateTime, toEasternDateTimeLocal } = loaded.parseEasternDateTimeLocal ? loaded : loaded.default;
       const close = parseEasternDateTimeLocal("2026-10-24T21:00");
       const fall = parseEasternDateTimeLocal("2026-11-01T01:30");
       console.log(JSON.stringify({ close: close.getTime(), fall: fall.getTime(), shown: formatEasternDateTime(close), prefill: toEasternDateTimeLocal(new Date(Date.UTC(2026, 9, 24, 21))) }));

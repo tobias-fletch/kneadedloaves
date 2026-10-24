@@ -49,7 +49,7 @@ test("unavailable ordering hides Orders Open, shows the bakery email, and disabl
     createElement(OrderingUnavailableNotice, { email: BAKERY_CONTACT_EMAIL }),
     createElement(PickupAreaNote, null),
     createElement(AddToCartButton, { productId: "loaf", disabled: true }),
-    createElement(CheckoutForm, { deliveryZones: [], pickupLocations: [], checkoutReady: false, contactEmail: BAKERY_CONTACT_EMAIL, hasCartItems: true })
+    createElement(CheckoutForm, { pickupLocations: [], checkoutReady: false, contactEmail: BAKERY_CONTACT_EMAIL, hasCartItems: true })
   ));
   assert.match(html, /Ordering unavailable/);
   assert.match(html, /Online ordering isn(?:'|&#x27;)t available right now/);
