@@ -1,0 +1,219 @@
+# Deletes the Neon database branch that the Vercel-managed Neon integration
+# creates for each preview deployment ("preview/<git-branch>") once the PR is
+# closed/merged or the git branch is deleted. Neon only removes these when
+# Vercel deletes the deployments (months later), and the Free plan caps the
+# project at 10 branches.
+#
+# Safety:
+#   * Only ever touches Neon branches whose name starts with "preview/".
+#   * Never touches main/master/production, the Neon default branch,
+#     protected branches, or branches that have child branches.
+#   * Skips (no failure) when the NEON_API_KEY secret is missing, when the
+#     preview branch does not exist, and for PRs opened from forks.
+#
+# Rollback: delete this file.
+name: Neon preview branch cleanup
+
+on:
+  pull_request:
+    types: [closed]
+  delete:
+  schedule:
+    # Weekly, Mondays 09:17 UTC: prune preview/* branches whose git branch is gone.
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: "Git branch whose Neon preview branch to delete (e.g. my-feature or preview/my-feature). Leave empty to prune all stale preview/* branches."
+        required: false
+        default: ""
+        type: string
+      dry_run:
+        description: "Only report what would be deleted (prune mode)"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+env:
+  NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID || 'ancient-term-41675694' }}
+  NEON_API_HOST: https://console.neon.tech/api/v2
+
+jobs:
+  delete-preview-branch:
+    name: Delete Neon preview branch
+    if: >-
+      (github.event_name == 'pull_request' &&
+        github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'delete' && github.event.ref_type == 'branch') ||
+      (github.event_name == 'workflow_dispatch' && inputs.branch != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: neon-preview-cleanup-${{ github.event.pull_request.head.ref || github.event.ref || inputs.branch }}
+      cancel-in-progress: false
+    steps:
+      - name: Resolve and check Neon branch
+        id: resolve
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          DELETED_REF: ${{ github.event.ref }}
+          INPUT_BRANCH: ${{ inputs.branch }}
+        run: |
+          set -euo pipefail
+          echo "proceed=false" >> "$GITHUB_OUTPUT"
+
+          case "$EVENT_NAME" in
+            pull_request)      git_branch="$PR_HEAD_REF" ;;
+            delete)            git_branch="$DELETED_REF" ;;
+            workflow_dispatch) git_branch="${INPUT_BRANCH#preview/}" ;;
+            *) echo "::notice::Unsupported event $EVENT_NAME; nothing to do."; exit 0 ;;
+          esac
+          git_branch="${git_branch#refs/heads/}"
+          neon_branch="preview/${git_branch}"
+
+          # --- Safety guards -------------------------------------------------
+          if [[ -z "$git_branch" ]]; then
+            echo "::notice::Empty branch name; nothing to do."; exit 0
+          fi
+          if [[ ! "$git_branch" =~ ^[A-Za-z0-9._/-]+$ || "$git_branch" == *..* || "$git_branch" == /* || ${#git_branch} -gt 200 ]]; then
+            echo "::warning::Refusing unexpected branch name '${git_branch}'."; exit 0
+          fi
+          case "$git_branch" in
+            main|master|production|prod)
+              echo "::warning::Refusing to touch '${git_branch}'."; exit 0 ;;
+          esac
+          if [[ "$neon_branch" != preview/?* ]]; then
+            echo "::warning::Refusing '${neon_branch}': not a preview/ branch."; exit 0
+          fi
+          if [[ ! "$NEON_PROJECT_ID" =~ ^[a-z0-9-]+$ ]]; then
+            echo "::error::NEON_PROJECT_ID '${NEON_PROJECT_ID}' looks invalid."; exit 1
+          fi
+          if [[ -z "${NEON_API_KEY:-}" ]]; then
+            echo "::notice::NEON_API_KEY secret is not set; skipping cleanup of ${neon_branch}."
+            exit 0
+          fi
+
+          # --- Does the Neon branch exist? ----------------------------------
+          status=$(curl -sS -G -o branches.json -w '%{http_code}' \
+            -H "Accept: application/json" \
+            -H "Authorization: Bearer ${NEON_API_KEY}" \
+            --data-urlencode "search=${neon_branch}" \
+            --data-urlencode "limit=10000" \
+            "${NEON_API_HOST}/projects/${NEON_PROJECT_ID}/branches")
+          if [[ "$status" != "200" ]]; then
+            echo "::error::Neon API returned HTTP ${status} while listing branches."
+            exit 1
+          fi
+          match=$(jq -c --arg n "$neon_branch" '[.branches[] | select(.name == $n)]' branches.json)
+          count=$(jq 'length' <<<"$match")
+          if [[ "$count" == "0" ]]; then
+            echo "::notice::Neon branch ${neon_branch} does not exist (already deleted or never created). Nothing to do."
+            exit 0
+          fi
+          if [[ "$count" != "1" ]]; then
+            echo "::warning::Found ${count} Neon branches named ${neon_branch}; refusing to guess."; exit 0
+          fi
+          id=$(jq -r '.[0].id' <<<"$match")
+          if [[ "$(jq -r '.[0].default or .[0].protected' <<<"$match")" == "true" ]]; then
+            echo "::warning::${neon_branch} is the default or a protected branch; refusing."; exit 0
+          fi
+          # A branch with children cannot be deleted; check the full list.
+          curl -sS -G --fail -o all.json \
+            -H "Accept: application/json" \
+            -H "Authorization: Bearer ${NEON_API_KEY}" \
+            --data-urlencode "limit=10000" \
+            "${NEON_API_HOST}/projects/${NEON_PROJECT_ID}/branches"
+          if [[ "$(jq --arg id "$id" '[.branches[] | select(.parent_id == $id)] | length' all.json)" != "0" ]]; then
+            echo "::warning::${neon_branch} has child branches; skipping."; exit 0
+          fi
+
+          echo "Will delete Neon branch ${neon_branch} (${id}) in project ${NEON_PROJECT_ID}."
+          {
+            echo "neon_branch=${neon_branch}"
+            echo "proceed=true"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Delete Neon branch
+        if: steps.resolve.outputs.proceed == 'true'
+        # neondatabase/delete-branch-action v3.2.1 (current v3), pinned by commit.
+        uses: neondatabase/delete-branch-action@4468d825d5a88ef4012f1705a82f02ec3072f776
+        with:
+          project_id: ${{ env.NEON_PROJECT_ID }}
+          branch: ${{ steps.resolve.outputs.neon_branch }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+
+  prune-stale-preview-branches:
+    name: Prune stale Neon preview branches
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && inputs.branch == '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: neon-preview-prune
+      cancel-in-progress: false
+    steps:
+      - name: Delete preview/* branches whose git branch no longer exists
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          DRY_RUN: ${{ inputs.dry_run || false }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${NEON_API_KEY:-}" ]]; then
+            echo "::notice::NEON_API_KEY secret is not set; skipping prune."
+            exit 0
+          fi
+          if [[ ! "$NEON_PROJECT_ID" =~ ^[a-z0-9-]+$ ]]; then
+            echo "::error::NEON_PROJECT_ID '${NEON_PROJECT_ID}' looks invalid."; exit 1
+          fi
+
+          # Git branches that still exist on GitHub.
+          gh api --paginate "repos/${REPO}/branches?per_page=100" --jq '.[].name' > git-branches.txt
+          # Sanity check: if the list looks wrong, do nothing rather than delete everything.
+          if [[ ! -s git-branches.txt ]] || ! grep -qxF "${DEFAULT_BRANCH:-main}" git-branches.txt; then
+            echo "::error::Could not reliably list git branches; aborting without deleting anything."
+            exit 1
+          fi
+
+          curl -sS -G --fail -o all.json \
+            -H "Accept: application/json" \
+            -H "Authorization: Bearer ${NEON_API_KEY}" \
+            --data-urlencode "limit=10000" \
+            "${NEON_API_HOST}/projects/${NEON_PROJECT_ID}/branches"
+
+          deleted=0; kept=0; failed=0
+          while IFS=$'\t' read -r id name; do
+            git_branch="${name#preview/}"
+            if grep -qxF "$git_branch" git-branches.txt; then
+              echo "Keep ${name}: git branch still exists."; kept=$((kept+1)); continue
+            fi
+            if [[ "$(jq --arg id "$id" '[.branches[] | select(.parent_id == $id)] | length' all.json)" != "0" ]]; then
+              echo "::warning::Skip ${name}: it has child branches."; continue
+            fi
+            if [[ "$DRY_RUN" == "true" ]]; then
+              echo "[dry run] Would delete ${name} (${id})."; continue
+            fi
+            status=$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE \
+              -H "Accept: application/json" \
+              -H "Authorization: Bearer ${NEON_API_KEY}" \
+              "${NEON_API_HOST}/projects/${NEON_PROJECT_ID}/branches/${id}")
+            case "$status" in
+              200|202|204) echo "Deleted ${name} (${id})."; deleted=$((deleted+1)) ;;
+              404)         echo "${name} already gone." ;;
+              *)           echo "::warning::Failed to delete ${name} (${id}): HTTP ${status}."; failed=$((failed+1)) ;;
+            esac
+          done < <(jq -r '.branches[]
+                          | select((.name | startswith("preview/")) and (.name | length) > 8)
+                          | select((.default | not) and (.protected | not))
+                          | select(.name != "main" and .name != "production")
+                          | [.id, .name] | @tsv' all.json)
+
+          echo "::notice::Neon preview prune finished: deleted=${deleted} kept=${kept} failed=${failed} dry_run=${DRY_RUN}"
