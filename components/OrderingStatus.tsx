@@ -1,6 +1,7 @@
 import Link from "next/link";
 import React from "react";
 import { ADMIN_CHECKOUT_BLOCKED_LEAD, ADMIN_TEST_MODE_BANNER, ALTERNATE_FULFILLMENT_NOTE, ORDERING_UNAVAILABLE_MESSAGE } from "@/lib/config-messages";
+import { DELIVERY_FEE_COPY } from "@/lib/delivery-pricing";
 import { PICKUP_AREA } from "@/lib/pickup-location";
 
 export function AdminOrderingBanner({ testMode, reasons }: { testMode: boolean; reasons: string[] }) {
@@ -53,8 +54,13 @@ export function AlternateFulfillmentNote({ day, email }: { day: string; email?: 
 
 export function PickupAreaNote() {
   return (
-    <p className="mt-2 text-sm font-medium text-ink/80">
-      Pickup: {PICKUP_AREA}. The bakery confirms the exact spot after payment.
-    </p>
+    <>
+      <p className="mt-2 text-sm font-medium text-ink/80">
+        Pickup: {PICKUP_AREA}. The bakery confirms the exact spot after payment.
+      </p>
+      <p className="mt-1 text-sm font-medium text-ink/80" data-testid="delivery-fee-copy">
+        Delivery: {DELIVERY_FEE_COPY}
+      </p>
+    </>
   );
 }

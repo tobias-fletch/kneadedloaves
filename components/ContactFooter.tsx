@@ -1,7 +1,6 @@
-import Link from "next/link";
 import React from "react";
 import { Instagram } from "lucide-react";
-import { ContactButton } from "@/components/ContactButton";
+import { ContactFooterButton } from "@/components/ContactFooterButton";
 import { instagramProfileUrl, type ContactDetails } from "@/lib/contact";
 
 export function ContactFooter({ contact }: { contact: ContactDetails }) {
@@ -12,11 +11,10 @@ export function ContactFooter({ contact }: { contact: ContactDetails }) {
           <div>
             <p className="font-display text-xl uppercase tracking-wide text-ink">Questions about an order?</p>
             <p className="mt-1 text-sm font-semibold text-ink/80">
-              Reach out before the bake day and I’ll get back to you.{" "}
-              <Link href="/contact" className="underline decoration-ink/50 underline-offset-2 hover:decoration-ink">
-                All contact options
-              </Link>
+              Reach out before the bake day and I’ll get back to you.
             </p>
+            {/* Plain text on purpose: the Contact button is the way to write in. */}
+            <p className="mt-1 break-all text-sm font-semibold text-ink/80">{contact.email}</p>
           </div>
           <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
             {contact.instagramHandle ? (
@@ -31,7 +29,7 @@ export function ContactFooter({ contact }: { contact: ContactDetails }) {
                 @{contact.instagramHandle}
               </a>
             ) : null}
-            <ContactButton contact={contact} />
+            <ContactFooterButton href="/contact" />
           </div>
         </div>
       </div>

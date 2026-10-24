@@ -30,7 +30,10 @@ function fixture(t: TestContext) {
   values.VENMO_VERIFIED_FINGERPRINT = destinationFingerprint(values.VENMO_HANDLE, values.VENMO_DESTINATION);
   stub(t, prisma.appConfig, "findMany", async () => Object.entries(values).map(([key, value]) => ({ key, value, secret: false })));
   stub(t, prisma.adminSettings, "findFirst", async () => ({ notificationEmail: "owner@example.test", instagramHandle: "test-bakery" }));
-  for (const target of [prisma.product, prisma.productImage, prisma.orderWindow, prisma.deliveryZone, prisma.pickupLocation, prisma.socialPlatformAccount, prisma.emailSubscriber]) stub(t, target, "count", async () => 1);
+  const previousOrigin = process.env.KL_ORIGIN_LATLNG;
+  process.env.KL_ORIGIN_LATLNG = "10.123456,-30.654321"; // made-up test coordinates
+  t.after(() => { if (previousOrigin === undefined) delete process.env.KL_ORIGIN_LATLNG; else process.env.KL_ORIGIN_LATLNG = previousOrigin; });
+  for (const target of [prisma.product, prisma.productImage, prisma.orderWindow, prisma.pickupLocation, prisma.socialPlatformAccount, prisma.emailSubscriber]) stub(t, target, "count", async () => 1);
   return values;
 }
 
@@ -39,6 +42,16 @@ test("manual-ready checklist needs neither Stripe credentials nor legacy email t
   const result = await getSetupChecklist();
   assert.deepEqual(result.incomplete, []);
   assert.equal(result.completeCount, result.totalCount);
+});
+
+test("distance delivery checklist item reports a missing origin without disclosing it", async t => {
+  fixture(t);
+  delete process.env.KL_ORIGIN_LATLNG;
+  const result = await getSetupChecklist();
+  const item = result.incomplete.find(entry => entry.id === "delivery-distance");
+  assert.ok(item);
+  assert.match(item.detail, /Free delivery within 1 mile, \$6 up to 3 miles\./);
+  assert.doesNotMatch(JSON.stringify(result), /10\.123456|-30\.654321/);
 });
 
 test("every operational payment gate keeps the checklist incomplete without disclosing secrets", async t => {
