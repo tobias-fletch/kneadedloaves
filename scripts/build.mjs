@@ -143,10 +143,42 @@ const historyErrors = {
   KNEADED_HISTORY_INCOMPLETE: "The deployment did not complete every repository migration. Investigate the incomplete migration history before retrying."
 };
 
-export function runBuild({ root = process.cwd(), env = process.env, run = spawnSync, log = console.log } = {}) {
+export const DIAGNOSTIC_MAX_LINES = 80;
+const DIAGNOSTIC_MAX_CHARS = 12000;
+// Env keys whose values must never reach build logs, even inside compiler or
+// prerender output. Matching is deliberately broad; over-redaction is fine.
+const SENSITIVE_ENV_KEY = /SECRET|PASSWORD|PASSWD|PASS$|TOKEN|KEY|DATABASE|POSTGRES|^PG|URL|URI|DSN|SMTP|STRIPE|VENMO|CREDENTIAL|AUTH|PRIVATE|SALT|FINGERPRINT|LATLNG|HANDLE|DESTINATION|EMAIL|NEON|COOKIE|SESSION/i;
+
+/**
+ * Make failed non-database build output safe to print: drop known sensitive env
+ * values, URL credentials and any database connection strings, then keep only
+ * the tail (where Next.js reports the actual error).
+ */
+export function redactDiagnostics(output, env = {}) {
+  // Strip ANSI colour codes so the Vercel log stays readable.
+  let text = String(output || "").replace(/\u001b\[[0-9;]*[A-Za-z]/g, "");
+  const secrets = Object.entries(env)
+    .filter(([key, value]) => typeof value === "string" && SENSITIVE_ENV_KEY.test(key))
+    .flatMap(([, value]) => [value, value.trim()])
+    .filter(value => value.length >= 6)
+    .sort((a, b) => b.length - a.length);
+  for (const secret of new Set(secrets)) text = text.split(secret).join("[redacted]");
+  text = text
+    .replace(/\b(postgres(?:ql)?|prisma(?:\+postgres)?|mysql|mongodb(?:\+srv)?|redis(?:s)?):\/\/[^\s'"`<>]+/gi, "$1://[redacted]")
+    .replace(/\b([a-z][a-z0-9+.-]*:\/\/)[^\s/@'"`<>]+@/gi, "$1[redacted]@");
+  const lines = text.split(/\r?\n/).map(line => line.trimEnd()).filter(Boolean).slice(-DIAGNOSTIC_MAX_LINES);
+  let excerpt = lines.join("\n");
+  if (excerpt.length > DIAGNOSTIC_MAX_CHARS) excerpt = excerpt.slice(-DIAGNOSTIC_MAX_CHARS);
+  return excerpt;
+}
+
+export function runBuild({ root = process.cwd(), env = process.env, run = spawnSync, log = console.log, diagnostic = console.error } = {}) {
   const prisma = path.join(root, "node_modules", "prisma", "build", "index.js");
   const next = path.join(root, "node_modules", "next", "dist", "bin", "next");
-  const step = (label, executable, args, commandEnv = env, input, historyCheck = false) => {
+  // Database steps (historyCheck or a dedicated databaseEnv) never forward output.
+  // Only non-database steps opt in with showDiagnostics, and even then the
+  // output is redacted and truncated before it is printed.
+  const step = (label, executable, args, commandEnv = env, input, historyCheck = false, showDiagnostics = false) => {
     log(label);
     let result;
     try {
@@ -160,8 +192,13 @@ export function runBuild({ root = process.cwd(), env = process.env, run = spawnS
     if (!result || result.error || result.signal || result.status !== 0) {
       // Connection details can appear in Prisma diagnostics. Never forward raw
       // subprocess output, command environment values, or exception messages.
+      // Non-database steps print a redacted tail so build failures are diagnosable.
       const output = `${result?.stdout || ""}\n${result?.stderr || ""}`;
       const reason = historyCheck && Object.entries(historyErrors).find(([code]) => output.includes(code));
+      if (showDiagnostics && !historyCheck) {
+        const excerpt = redactDiagnostics(output, commandEnv);
+        if (excerpt) diagnostic(`${label} output (redacted, last ${DIAGNOSTIC_MAX_LINES} lines max):\n${excerpt}`);
+      }
       throw new Error(reason ? reason[1] : `${label} failed. Check connectivity, database permissions, migration history, and the build environment in a trusted session; the release was stopped.`);
     }
   };
@@ -187,8 +224,8 @@ export function runBuild({ root = process.cwd(), env = process.env, run = spawnS
   } else {
     log("Skipping database migrations outside a production deploy.");
   }
-  step("Generating Prisma client", prisma, ["generate", "--schema", "prisma/schema.prisma"]);
-  step("Building Next.js", next, ["build"]);
+  step("Generating Prisma client", prisma, ["generate", "--schema", "prisma/schema.prisma"], env, undefined, false, true);
+  step("Building Next.js", next, ["build"], env, undefined, false, true);
   log("Build completed.");
 }
 
