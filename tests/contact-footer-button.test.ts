@@ -17,7 +17,7 @@ test("on /contact the footer button targets the form section instead of re-navig
   assert.match(button, /usePathname\(\)/);
   assert.match(button, /pathname !== href/);
   assert.match(button, /event\.preventDefault\(\)/);
-  assert.match(button, /scrollIntoView/);
+  assert.match(button, /window\.scrollTo\(/);
   assert.match(button, /\.focus\(/);
   const page = readFileSync("app/contact/page.tsx", "utf8");
   assert.match(page, /<section id=\{CONTACT_FORM_ID\}/);

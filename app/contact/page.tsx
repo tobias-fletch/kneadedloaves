@@ -20,7 +20,7 @@ export default async function ContactPage() {
         <p className="mt-2 text-ink/70">Order questions, special requests, pickup timing, or delivery notes? Send a message and I&rsquo;ll reply by email.</p>
       </div>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
-        <section id={CONTACT_FORM_ID} className="panel scroll-mt-6 p-5 sm:p-6" aria-labelledby="contact-form-title">
+        <section id={CONTACT_FORM_ID} className="panel p-5 sm:p-6" aria-labelledby="contact-form-title">
           <h2 id="contact-form-title" className="font-display text-2xl uppercase tracking-wide">Send a message</h2>
           <p className="mb-4 mt-1 text-sm text-ink/70">You&rsquo;ll get a short confirmation with a copy of your note.</p>
           <ContactForm email={contact.email} />

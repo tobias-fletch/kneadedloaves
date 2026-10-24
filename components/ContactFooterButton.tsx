@@ -21,7 +21,10 @@ export function ContactFooterButton({ href }: { href: string }) {
     if (!target) return;
     event.preventDefault();
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    target.scrollIntoView({ behavior: reduceMotion ? "auto" : "smooth", block: "start" });
+    // The site header is sticky, so stop just below it rather than under it.
+    const headerBottom = document.querySelector("header")?.getBoundingClientRect().bottom ?? 0;
+    const top = target.getBoundingClientRect().top + window.scrollY - Math.max(headerBottom, 0) - 16;
+    window.scrollTo({ top: Math.max(top, 0), behavior: reduceMotion ? "auto" : "smooth" });
     const field = target.querySelector<HTMLElement>(
       'input:not([type="hidden"]):not([tabindex="-1"]), textarea, button'
     );
