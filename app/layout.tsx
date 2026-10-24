@@ -12,20 +12,23 @@ import { getContactDetails } from "@/lib/contact";
 import { getManualPaymentConfig } from "@/lib/manual-payment-config";
 import { storefrontCheckoutAccess } from "@/lib/storefront-ordering";
 import { prisma } from "@/lib/prisma";
+import { SHARE_DESCRIPTION } from "@/lib/site-metadata";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://kneadedloaves.com"),
   title: "Kneaded Loaves",
-  description: "Small-batch bakery ordering and admin dashboard.",
+  description: SHARE_DESCRIPTION,
   appleWebApp: { capable: true, title: "Kneaded Loaves" },
   openGraph: {
     siteName: "Kneaded Loaves",
     title: "Kneaded Loaves",
-    description: "Small-batch bakery ordering and admin dashboard.",
+    description: SHARE_DESCRIPTION,
     type: "website"
   },
   twitter: {
-    card: "summary_large_image"
+    card: "summary_large_image",
+    title: "Kneaded Loaves",
+    description: SHARE_DESCRIPTION
   }
 };
 
