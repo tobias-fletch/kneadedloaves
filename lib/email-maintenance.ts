@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { processEmailQueue } from "@/lib/email-queue";
 import { runBounded } from "@/lib/worker-batch";
+import { queueAdminOrderFallback } from "@/lib/admin-notify";
 
 export async function pruneOperationalRecords() {
   const now = new Date();
@@ -11,6 +12,7 @@ export async function pruneOperationalRecords() {
 
 export async function processOrderEmails(orderId: string, maxJobs = 5) {
   if (!/^[\w-]+$/.test(orderId)) return 0;
+  await queueAdminOrderFallback(orderId).catch(() => console.error("Admin order alert could not be queued."));
   return runBounded(() => processEmailQueue({ dedupeSuffix: `:${orderId}` }), maxJobs);
 }
 
