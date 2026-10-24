@@ -36,16 +36,6 @@ export const cartMutationSchema = z.object({
   quantity: z.number().finite().int().min(0).max(1000)
 });
 
-export const socialPostSchema = z.object({
-  title: z.string().min(3),
-  caption: z.string().min(10),
-  hashtags: z.array(z.string()).default([]),
-  platforms: z.array(z.enum(["INSTAGRAM", "TIKTOK", "FACEBOOK", "YOUTUBE_SHORTS"])).min(1),
-  status: z.enum(["DRAFT", "NEEDS_REVIEW", "APPROVED", "SCHEDULED", "POSTED", "FAILED", "REJECTED"]).default("DRAFT"),
-  scheduledAt: z.string().optional().nullable(),
-  productId: z.string().optional().nullable(),
-  popupEventId: z.string().optional().nullable()
-});
 
 export function csvToArray(value: unknown) {
   if (Array.isArray(value)) return value.map(String).filter(Boolean);

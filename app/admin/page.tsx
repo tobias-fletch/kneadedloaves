@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getSetupChecklist } from "@/lib/setup-checklist";
 import { summarizeOrders } from "@/lib/admin-metrics";
 import { SetupChecklistClient } from "@/components/SetupChecklistClient";
-import { orderStatusTone } from "@/lib/admin-status";
+import { orderStatusBadge } from "@/lib/admin-status";
 
 export default async function AdminPage() {
   const [recent, products, windows, setup] = await Promise.all([
@@ -16,7 +16,7 @@ export default async function AdminPage() {
   ]);
   const current = windows[0];
   const windowOrders = current
-    ? await prisma.order.findMany({ where: { orderWindowId: current.id }, select: { status: true, paymentState: true, totalCents: true } }).catch(() => [])
+    ? await prisma.order.findMany({ where: { orderWindowId: current.id }, select: { status: true, paymentState: true, totalCents: true, paymentReviewRequestedAt: true } }).catch(() => [])
     : [];
   const summary = summarizeOrders(windowOrders);
 
@@ -28,7 +28,7 @@ export default async function AdminPage() {
           <Metric label="Orders" value={String(summary.orders)} />
           <Metric label="Verified revenue" value={formatMoney(summary.verifiedCents)} />
           <Metric label="Awaiting payment" value={String(summary.awaitingPayment)} href="/admin/orders?status=PENDING" highlight={summary.awaitingPayment > 0} />
-          <Metric label="Customer says paid" value={String(summary.needsReview)} href="/admin/orders?payment=REVIEW" highlight={summary.needsReview > 0} />
+          <Metric label="Customer says paid" value={String(summary.customerSaysPaid)} href="/admin/orders?payment=CLAIMED" highlight={summary.customerSaysPaid > 0} />
         </div>
       </section>
 
@@ -50,7 +50,7 @@ export default async function AdminPage() {
                   </div>
                   <div className="shrink-0 text-right">
                     <p className="font-black">{formatMoney(order.totalCents)}</p>
-                    <span className={`badge mt-1 px-1.5 py-0.5 text-[10px] ${orderStatusTone(order.status)}`}>{order.status === "PENDING" ? "Awaiting payment" : order.status.replaceAll("_", " ")}</span>
+                    <span className={`badge mt-1 px-1.5 py-0.5 text-[10px] ${orderStatusBadge(order).tone}`}>{orderStatusBadge(order).label}</span>
                   </div>
                 </li>
               ))}

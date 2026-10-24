@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { createAutomatedDraft } from "@/lib/social";
 import { productSchema } from "@/lib/validation";
 
 export async function POST(request: Request) {
@@ -16,6 +15,5 @@ export async function POST(request: Request) {
       images: imageUrl ? { create: { url: imageUrl, alt: data.name } } : undefined
     }
   });
-  await createAutomatedDraft({ title: product.name, trigger: "New product", productId: product.id });
   return NextResponse.json(product);
 }

@@ -1,6 +1,6 @@
 # Kneaded Loaves
 
-Next.js bakery storefront and operations app with PostgreSQL/Prisma, customer accounts, cart, order windows, encrypted settings, durable email delivery and social drafting.
+Next.js bakery storefront and operations app with PostgreSQL/Prisma, customer accounts, cart, order windows, encrypted settings and durable email delivery.
 
 ## Local use
 
@@ -35,6 +35,6 @@ The shop is hosted on Vercel. Checkout is not hard-disabled in code. `POST /api/
 
 Order email is queued in the database. On Vercel, a successful checkout sends that order's messages with `after()` so they do not wait for cron. `vercel.json` schedules the email and payment-expiry routes once per day, which is the Hobby plan limit (a per-minute schedule fails deploy, and Hobby may start a daily job up to 59 minutes late). Both routes require `Authorization: Bearer ${CRON_SECRET}` and reject a missing or wrong secret. `npm run email:worker` and `npm run payments:expire` call the same functions for a local or always-on host. Gmail (`smtp.gmail.com`, port 465 SSL or 587 STARTTLS, app password, From matching the authenticated mailbox) allows about 500 messages per day.
 
-Stripe code is still present and unused. Do not use real payment credentials for testing. Automatic social publishing is not connected.
+Stripe code is still present and unused. Do not use real payment credentials for testing.
 
 See [PRODUCTION-READINESS.md](./PRODUCTION-READINESS.md) for verified changes and [DEPLOYMENT.md](./DEPLOYMENT.md) for release, backup, restore and owner setup.

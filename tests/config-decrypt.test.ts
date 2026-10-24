@@ -70,7 +70,7 @@ test("setup checklist and form tell the owner to re-enter a stored value that ca
   assert.notEqual(usable, broken);
   stub(t, prisma.appConfig, "findMany", async () => [{ key: "JWT_SECRET", value: broken, secret: true }]);
   stub(t, prisma.adminSettings, "findFirst", async () => null);
-  for (const target of [prisma.product, prisma.productImage, prisma.orderWindow, prisma.deliveryZone, prisma.pickupLocation, prisma.socialPlatformAccount, prisma.emailSubscriber]) {
+  for (const target of [prisma.product, prisma.productImage, prisma.orderWindow, prisma.deliveryZone, prisma.pickupLocation, prisma.emailSubscriber]) {
     stub(t, target, "count", async () => 0);
   }
   const checklist = await getSetupChecklist();

@@ -2,7 +2,6 @@ import { publicRedirectUrl } from "@/lib/public-origin";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { createAutomatedDraft } from "@/lib/social";
 
 export async function POST(request: Request) {
   await requireAdmin();
@@ -21,7 +20,6 @@ export async function POST(request: Request) {
       products: Array.isArray(productIds) ? { connect: productIds.map((id: string) => ({ id })) } : undefined
     }
   });
-  await createAutomatedDraft({ title: event.title, trigger: "Pop-up event", popupEventId: event.id });
   if (!contentType.includes("application/json")) {
     return NextResponse.redirect(publicRedirectUrl(request, "/admin/events"), { status: 303 });
   }

@@ -33,7 +33,7 @@ function fixture(t: TestContext) {
   const previousOrigin = process.env.KL_ORIGIN_LATLNG;
   process.env.KL_ORIGIN_LATLNG = "10.123456,-30.654321"; // made-up test coordinates
   t.after(() => { if (previousOrigin === undefined) delete process.env.KL_ORIGIN_LATLNG; else process.env.KL_ORIGIN_LATLNG = previousOrigin; });
-  for (const target of [prisma.product, prisma.productImage, prisma.orderWindow, prisma.pickupLocation, prisma.socialPlatformAccount, prisma.emailSubscriber]) stub(t, target, "count", async () => 1);
+  for (const target of [prisma.product, prisma.productImage, prisma.orderWindow, prisma.pickupLocation, prisma.emailSubscriber]) stub(t, target, "count", async () => 1);
   return values;
 }
 

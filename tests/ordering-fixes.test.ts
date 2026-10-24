@@ -36,7 +36,7 @@ test("overview revenue counts only verified, non-cancelled orders", () => {
     { status: "CANCELLED", paymentState: "REFUNDED", totalCents: 1650 },
     { status: "CANCELLED", paymentState: "UNPAID", totalCents: 1000 }
   ]);
-  assert.deepEqual(summary, { orders: 3, awaitingPayment: 2, needsReview: 1, verifiedCents: 3000 });
+  assert.deepEqual(summary, { orders: 3, awaitingPayment: 2, customerSaysPaid: 0, needsReview: 1, verifiedCents: 3000 });
 });
 
 test("removed dead code stays removed and nothing posts to the missing upload route", () => {

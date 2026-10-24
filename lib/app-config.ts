@@ -21,13 +21,7 @@ export const setupConfigFields = [
   { key: "EMAIL_PICKUP_SUBJECT", label: "Pickup email subject", group: "Email", secret: false, optional: true },
   { key: "EMAIL_PICKUP_BODY", label: "Pickup email body", group: "Email", secret: false, optional: true },
   { key: "EMAIL_DELIVERY_SUBJECT", label: "Delivery email subject", group: "Email", secret: false, optional: true },
-  { key: "EMAIL_DELIVERY_BODY", label: "Delivery email body", group: "Email", secret: false, optional: true },
-  { key: "INSTAGRAM_GRAPH_TOKEN", label: "Instagram Graph token", group: "Social", secret: true },
-  { key: "FACEBOOK_PAGE_TOKEN", label: "Facebook page token", group: "Social", secret: true },
-  { key: "TIKTOK_CLIENT_KEY", label: "TikTok client key", group: "Social", secret: true },
-  { key: "TIKTOK_CLIENT_SECRET", label: "TikTok client secret", group: "Social", secret: true },
-  { key: "YOUTUBE_CLIENT_ID", label: "YouTube client ID", group: "Social", secret: true },
-  { key: "YOUTUBE_CLIENT_SECRET", label: "YouTube client secret", group: "Social", secret: true }
+  { key: "EMAIL_DELIVERY_BODY", label: "Delivery email body", group: "Email", secret: false, optional: true }
 ] as const;
 
 export type SetupConfigKey = (typeof setupConfigFields)[number]["key"];

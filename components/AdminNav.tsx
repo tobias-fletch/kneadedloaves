@@ -10,7 +10,6 @@ const links = [
   ["/admin/customers", "Customers"],
   ["/admin/events", "Events"],
   ["/admin/email", "Email"],
-  ["/admin/social", "Social"],
   ["/admin/setup", "Setup"],
   ["/admin/test-checkout", "Test checkout"]
 ] as const;

@@ -7,3 +7,15 @@ export function orderStatusTone(status: string) {
     default: return "bg-crumb";
   }
 }
+
+type BadgeOrder = { status: string; paymentReviewRequestedAt: Date | null };
+/** Status badge text and colour. "Customer says paid" stands out from plain "Awaiting payment". */
+export function orderStatusBadge(order: BadgeOrder) {
+  if (order.status === "PENDING" && order.paymentReviewRequestedAt) return { label: "Customer says paid", tone: "bg-ink text-butter" };
+  return { label: order.status === "PENDING" ? "Awaiting payment" : order.status.replaceAll("_", " "), tone: orderStatusTone(order.status) };
+}
+/** Orders waiting on Tobias's Venmo check go first; otherwise keep the existing (newest-first) order. */
+export function customerSaysPaidFirst<T extends BadgeOrder>(orders: T[]) {
+  const flagged = (order: T) => order.status === "PENDING" && order.paymentReviewRequestedAt ? 0 : 1;
+  return [...orders].sort((a, b) => flagged(a) - flagged(b));
+}

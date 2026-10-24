@@ -2,13 +2,13 @@
 import React, { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatMoney } from "@/lib/money";
-type Props = { orderId: string; status: string; paymentMethod: string | null; paymentState: string; totalCents: number; currency: string; reference: string | null; dueAt: string | null; fulfillmentType: string; hasPaymentEvidence: boolean; hasPaymentDiscrepancy: boolean; inventoryRestored: boolean };
+type Props = { orderId: string; status: string; paymentMethod: string | null; paymentState: string; totalCents: number; currency: string; reference: string | null; dueAt: string | null; fulfillmentType: string; hasPaymentEvidence: boolean; hasPaymentDiscrepancy: boolean; inventoryRestored: boolean; customerSaysPaid?: boolean };
 type PaymentAction = "verify" | "review" | "refund";
 const nextStatuses: Record<string, string[]> = { PENDING: ["CANCELLED"], PAID: ["PREPARING"], PREPARING: ["READY"], READY: ["OUT_FOR_DELIVERY", "COMPLETED"], OUT_FOR_DELIVERY: ["COMPLETED"], COMPLETED: [], CANCELLED: [] };
 function parseAmount(value: string) { if (!/^\d+(?:\.\d{1,2})?$/.test(value)) return null; const [whole, fraction = ""] = value.split("."); const cents = Number(whole) * 100 + Number(fraction.padEnd(2, "0")); return Number.isSafeInteger(cents) && cents > 0 ? cents : null; }
 export function AdminOrderActions(props: Props) {
   const router = useRouter();
-  const canVerify = props.status === "PENDING" && !props.hasPaymentDiscrepancy && !props.inventoryRestored && ["UNPAID", "REVIEW"].includes(props.paymentState) && Boolean(props.dueAt && new Date(props.dueAt).getTime() > Date.now());
+  const canVerify = props.status === "PENDING" && !props.hasPaymentDiscrepancy && !props.inventoryRestored && ["UNPAID", "REVIEW"].includes(props.paymentState) && (Boolean(props.customerSaysPaid) || Boolean(props.dueAt && new Date(props.dueAt).getTime() > Date.now()));
   const canRefund = ["VERIFIED", "REVIEW"].includes(props.paymentState) && props.hasPaymentEvidence;
   const canReview = props.paymentMethod === "VENMO";
   const [action, setAction] = useState<PaymentAction>(canVerify ? "verify" : props.status === "COMPLETED" && canRefund ? "refund" : "review");
