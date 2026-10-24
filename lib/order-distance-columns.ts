@@ -1,4 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
+import type { DeliveryQuote } from "@/lib/delivery-distance";
+import { DISTANCE_NOT_VERIFIED_ADMIN_NOTE } from "@/lib/delivery-pricing";
 
 // Hub #63 adds two nullable Order columns. Preview deployments share the
 // production database, where the migration only runs on a production deploy.
@@ -20,3 +22,16 @@ export async function hasDeliveryDistanceColumns(db: Pick<PrismaClient, "$queryR
 }
 
 export function resetDeliveryDistanceColumnCache() { known = null; }
+
+/**
+ * Where checkout stores the unverified-distance flag. With the columns present (every production deploy
+ * migrates first) it lives only in deliveryDistanceVerified/deliveryDistanceMiles, never in the instructions.
+ * Only without the columns is the admin note kept in fulfillmentInstructions so /admin still sees it;
+ * customer pages and emails strip it (customerVisibleInstructions).
+ */
+export function deliveryDistanceOrderFields(isDelivery: boolean, quote: DeliveryQuote | null, distanceColumns: boolean, pickupInstructions?: string | null) {
+  const unverifiedDistance = isDelivery && quote?.verified === false;
+  const fulfillmentInstructions = isDelivery ? (unverifiedDistance && !distanceColumns ? `${DISTANCE_NOT_VERIFIED_ADMIN_NOTE}.` : undefined) : pickupInstructions ?? undefined;
+  const columns = isDelivery && distanceColumns ? { deliveryDistanceMiles: quote?.distanceMiles ?? null, deliveryDistanceVerified: quote?.verified ?? false } : {};
+  return { unverifiedDistance, fulfillmentInstructions, columns };
+}

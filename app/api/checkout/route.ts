@@ -13,8 +13,7 @@ import { adminCheckoutReadiness, getManualPaymentConfig, isAdminTestOrder } from
 import { expireUnpaidOrders } from "@/lib/manual-payments";
 import { renderOrderEmail } from "@/lib/order-email";
 import { defaultDeliveryDeps, quoteDelivery, type DeliveryQuote } from "@/lib/delivery-distance";
-import { DISTANCE_NOT_VERIFIED_ADMIN_NOTE } from "@/lib/delivery-pricing";
-import { hasDeliveryDistanceColumns } from "@/lib/order-distance-columns";
+import { deliveryDistanceOrderFields, hasDeliveryDistanceColumns } from "@/lib/order-distance-columns";
 import { describePickup } from "@/lib/pickup-location";
 import { checkoutDigest as digest, checkoutOwnerHash, checkoutOwners, checkoutRequestHash, lockCheckoutRequest, receiptForOwnedAttempt, validCheckoutKey } from "@/lib/checkout-recovery";
 export async function POST(request: Request) {
@@ -82,16 +81,16 @@ export async function POST(request: Request) {
       const paymentReference = `${isAdminTestOrder(config, isAdmin) ? "KL-ADMIN-TEST-" : "KL-"}${randomUUID().toUpperCase()}`;
       const paymentDueAt = new Date(Math.min(now.getTime() + config.holdMinutes * 60000, freshWindow.manualOpen ? Infinity : freshWindow.closesAt.getTime()));
       const fulfillmentLocation = isDelivery ? `${parsed.data.deliveryAddress}\n${parsed.data.deliveryZip}` : describePickup(pickup!).text;
-      const unverifiedDistance = isDelivery && deliveryQuote?.verified === false;
-      // If the distance columns do not exist yet, keep the unverified flag visible to /admin in the instructions.
-      const fulfillmentInstructions = isDelivery ? (unverifiedDistance && !distanceColumns ? `${DISTANCE_NOT_VERIFIED_ADMIN_NOTE}.` : undefined) : pickup?.instructions;
+      // The flag lives in deliveryDistanceVerified; see deliveryDistanceOrderFields for the no-columns fallback.
+      const distance = deliveryDistanceOrderFields(isDelivery, deliveryQuote, distanceColumns, pickup?.instructions);
+      const { unverifiedDistance, fulfillmentInstructions } = distance;
       const created = await tx.order.create({ data: {
         userId: session?.sub, checkoutRequestHash: requestHash, checkoutKeyHash, checkoutPayloadHash,
         customerEmail: parsed.data.customerEmail, customerName: parsed.data.customerName, customerPhone: parsed.data.customerPhone,
         fulfillmentType: parsed.data.fulfillmentType, pickupLocationId: pickup?.id,
         deliveryAddress: isDelivery ? fulfillmentLocation : undefined, fulfillmentLocation,
         fulfillmentInstructions,
-        ...(isDelivery && distanceColumns ? { deliveryDistanceMiles: deliveryQuote?.distanceMiles ?? null, deliveryDistanceVerified: deliveryQuote?.verified ?? false } : {}),
+        ...distance.columns,
         totalCents, deliveryFeeCents, orderWindowId: openWindow.id,
         paymentMethod: "VENMO", paymentReference, currency: "USD", paymentDestination: config.VENMO_DESTINATION, paymentHandle: config.VENMO_HANDLE, paymentDueAt,
         items: { create: lockedCart.items.map(item => ({ productId: item.productId, quantity: item.quantity, unitPriceCents: item.product.priceCents, productName: item.product.name })) }
@@ -114,11 +113,12 @@ export async function POST(request: Request) {
         paymentDestination: config.VENMO_DESTINATION,
         paymentDueAt
       };
-      const customerMessage = renderOrderEmail("customer-reservation", emailDetails);
+      // The customer email never carries the unverified-distance flag; only the admin email does.
+      const customerMessage = renderOrderEmail("customer-reservation", { ...emailDetails, distanceUnverified: false });
       await queueEmail({ dedupeKey: `order-received:${created.id}`, to: created.customerEmail, subject: customerMessage.subject, body: customerMessage.text, html: customerMessage.html }, tx);
       const settings = await tx.adminSettings.findFirst();
       if (settings?.emailNotificationsEnabled && settings.notificationEmail) {
-        const adminMessage = renderOrderEmail("admin-new-order", emailDetails);
+        const adminMessage = renderOrderEmail("admin-new-order", { ...emailDetails, distanceUnverified: unverifiedDistance });
         await queueEmail({ dedupeKey: `admin-order:${created.id}`, to: settings.notificationEmail, subject: adminMessage.subject, body: adminMessage.text, html: adminMessage.html }, tx);
       }
       return receiptForOwnedAttempt(tx, created, key, owners, config.JWT_SECRET);
