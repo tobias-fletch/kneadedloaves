@@ -4,7 +4,7 @@ import { ShoppingCart, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { shouldOpenCheckoutRecovery } from "@/lib/checkout-recovery-client";
-import type { DeliveryZone, PickupLocation } from "@prisma/client";
+import type { PickupLocation } from "@prisma/client";
 import { CartSummary } from "@/components/CartSummary";
 import { CheckoutForm } from "@/components/CheckoutForm";
 
@@ -13,14 +13,12 @@ type Cart = {
 };
 
 export function CartDrawerButton({
-  deliveryZones,
   pickupLocations,
   checkoutReady = true,
   adminTestMode = false,
   adminSetupReasons = [],
   contactEmail = ""
 }: {
-  deliveryZones: DeliveryZone[];
   pickupLocations: PickupLocation[];
   checkoutReady?: boolean;
   adminTestMode?: boolean;
@@ -76,7 +74,7 @@ export function CartDrawerButton({
             </div>
             <div className="space-y-4 p-4">
               <CartSummary framed={false} onItemCountChange={setItemCount} />
-              <CheckoutForm checkoutReady={checkoutReady} adminTestMode={adminTestMode} adminSetupReasons={adminSetupReasons} contactEmail={contactEmail} deliveryZones={deliveryZones} pickupLocations={pickupLocations} framed={false} hasCartItems={itemCount > 0} />
+              <CheckoutForm checkoutReady={checkoutReady} adminTestMode={adminTestMode} adminSetupReasons={adminSetupReasons} contactEmail={contactEmail} pickupLocations={pickupLocations} framed={false} hasCartItems={itemCount > 0} />
             </div>
           </div>
         </div>

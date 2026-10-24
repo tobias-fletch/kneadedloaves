@@ -43,9 +43,8 @@ const inter = Inter({ weight: ["400", "500", "600", "700", "800"], subsets: ["la
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
-  const [settings, deliveryZones, pickupLocations, appearance, contact, payment] = await Promise.all([
+  const [settings, pickupLocations, appearance, contact, payment] = await Promise.all([
     prisma.adminSettings.findFirst().catch(() => null),
-    prisma.deliveryZone.findMany({ where: { active: true } }).catch(() => []),
     prisma.pickupLocation.findMany({ where: { active: true } }).catch(() => []),
     getAppearance(),
     getContactDetails(),
@@ -76,7 +75,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               />
             </Link>
             <div className="ml-auto flex shrink-0 items-center gap-2">
-              <CartDrawerButton checkoutReady={checkoutReady} adminTestMode={orderingAccess?.adminTestMode ?? false} adminSetupReasons={orderingAccess?.adminSetupReasons ?? []} contactEmail={contact.email} deliveryZones={deliveryZones} pickupLocations={pickupLocations} />
+              <CartDrawerButton checkoutReady={checkoutReady} adminTestMode={orderingAccess?.adminTestMode ?? false} adminSetupReasons={orderingAccess?.adminSetupReasons ?? []} contactEmail={contact.email} pickupLocations={pickupLocations} />
               {session?.role === "ADMIN" ? (
                 <Link className="btn-primary px-3" href="/admin">
                   Admin

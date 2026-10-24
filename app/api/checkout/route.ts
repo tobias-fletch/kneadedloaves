@@ -12,7 +12,9 @@ import { processOrderEmails } from "@/lib/email-maintenance";
 import { adminCheckoutReadiness, getManualPaymentConfig, isAdminTestOrder } from "@/lib/manual-payment-config";
 import { expireUnpaidOrders } from "@/lib/manual-payments";
 import { renderOrderEmail } from "@/lib/order-email";
-import { deliveryCoverageError } from "@/lib/delivery-zone";
+import { defaultDeliveryDeps, quoteDelivery, type DeliveryQuote } from "@/lib/delivery-distance";
+import { DISTANCE_NOT_VERIFIED_ADMIN_NOTE } from "@/lib/delivery-pricing";
+import { hasDeliveryDistanceColumns } from "@/lib/order-distance-columns";
 import { describePickup } from "@/lib/pickup-location";
 import { checkoutDigest as digest, checkoutOwnerHash, checkoutOwners, checkoutRequestHash, lockCheckoutRequest, receiptForOwnedAttempt, validCheckoutKey } from "@/lib/checkout-recovery";
 export async function POST(request: Request) {
@@ -33,6 +35,12 @@ export async function POST(request: Request) {
     const checkoutKeyHash = checkoutOwnerHash(owner, key);
     const requestHash = checkoutRequestHash(key);
     const checkoutPayloadHash = digest(JSON.stringify(parsed.data));
+    // Price delivery by straight-line distance before taking any locks; the geocoder can take up to ~5s.
+    // A failed geocode is charged $6 and flagged unverified. Distances never leave the server.
+    const deliveryQuote: DeliveryQuote | null = parsed.data.fulfillmentType === "DELIVERY"
+      ? await quoteDelivery(parsed.data.deliveryAddress || "", parsed.data.deliveryZip || "", defaultDeliveryDeps())
+      : null;
+    const distanceColumns = deliveryQuote ? await hasDeliveryDistanceColumns(prisma) : false;
     // Clear overdue reservations before testing window capacity, including when full.
     await expireUnpaidOrders();
     const result = await prisma.$transaction(async tx => {
@@ -57,13 +65,12 @@ export async function POST(request: Request) {
       if (!acceptsOrders(freshWindow, count, now)) throw new Error("This order window is closed or full.");
       const lockedCart = await tx.cart.findUnique({ where: { id: cart.id }, include: { items: { include: { product: true } } } });
       if (!lockedCart?.items.length) throw new Error("Your cart is empty.");
-      const zone = parsed.data.fulfillmentType === "DELIVERY" && parsed.data.deliveryZoneId ? await tx.deliveryZone.findUnique({ where: { id: parsed.data.deliveryZoneId } }) : null;
+      const isDelivery = parsed.data.fulfillmentType === "DELIVERY";
       const pickup = parsed.data.fulfillmentType === "PICKUP" && parsed.data.pickupLocationId ? await tx.pickupLocation.findUnique({ where: { id: parsed.data.pickupLocationId } }) : null;
-      // An inactive zone covers no ZIP, including a catch-all whose zipCodes array is empty.
-      const deliveryError = deliveryCoverageError(zone, parsed.data.deliveryZip || "");
-      if (parsed.data.fulfillmentType === "DELIVERY" && deliveryError) throw new Error(deliveryError);
+      // Delivery is priced by distance, not by ZIP or DeliveryZone; past 3 miles it is refused.
+      if (isDelivery && (!deliveryQuote?.inRange || deliveryQuote.feeCents === null)) throw new Error(deliveryQuote?.message || "Delivery is not available for this address.");
       if (parsed.data.fulfillmentType === "PICKUP" && !pickup?.active) throw new Error("Choose an active pickup location.");
-      const deliveryFeeCents = zone?.feeCents || 0;
+      const deliveryFeeCents = isDelivery ? deliveryQuote?.feeCents ?? 0 : 0;
       const totalCents = lockedCart.items.reduce((sum,item) => sum + item.product.priceCents * item.quantity, deliveryFeeCents);
       if (!Number.isSafeInteger(totalCents) || totalCents <= 0 || totalCents > 100000000 || deliveryFeeCents < 0) throw new Error("Invalid order pricing. Please contact the bakery.");
       for (const item of [...lockedCart.items].sort((a,b) => a.productId.localeCompare(b.productId))) {
@@ -74,13 +81,17 @@ export async function POST(request: Request) {
       }
       const paymentReference = `${isAdminTestOrder(config, isAdmin) ? "KL-ADMIN-TEST-" : "KL-"}${randomUUID().toUpperCase()}`;
       const paymentDueAt = new Date(Math.min(now.getTime() + config.holdMinutes * 60000, freshWindow.manualOpen ? Infinity : freshWindow.closesAt.getTime()));
-      const fulfillmentLocation = zone ? `${parsed.data.deliveryAddress}\n${parsed.data.deliveryZip}` : describePickup(pickup!).text;
+      const fulfillmentLocation = isDelivery ? `${parsed.data.deliveryAddress}\n${parsed.data.deliveryZip}` : describePickup(pickup!).text;
+      const unverifiedDistance = isDelivery && deliveryQuote?.verified === false;
+      // If the distance columns do not exist yet, keep the unverified flag visible to /admin in the instructions.
+      const fulfillmentInstructions = isDelivery ? (unverifiedDistance && !distanceColumns ? `${DISTANCE_NOT_VERIFIED_ADMIN_NOTE}.` : undefined) : pickup?.instructions;
       const created = await tx.order.create({ data: {
         userId: session?.sub, checkoutRequestHash: requestHash, checkoutKeyHash, checkoutPayloadHash,
         customerEmail: parsed.data.customerEmail, customerName: parsed.data.customerName, customerPhone: parsed.data.customerPhone,
-        fulfillmentType: parsed.data.fulfillmentType, deliveryZoneId: zone?.id, pickupLocationId: pickup?.id,
-        deliveryAddress: zone ? fulfillmentLocation : undefined, fulfillmentLocation,
-        fulfillmentInstructions: zone?.instructions || pickup?.instructions,
+        fulfillmentType: parsed.data.fulfillmentType, pickupLocationId: pickup?.id,
+        deliveryAddress: isDelivery ? fulfillmentLocation : undefined, fulfillmentLocation,
+        fulfillmentInstructions,
+        ...(isDelivery && distanceColumns ? { deliveryDistanceMiles: deliveryQuote?.distanceMiles ?? null, deliveryDistanceVerified: deliveryQuote?.verified ?? false } : {}),
         totalCents, deliveryFeeCents, orderWindowId: openWindow.id,
         paymentMethod: "VENMO", paymentReference, currency: "USD", paymentDestination: config.VENMO_DESTINATION, paymentHandle: config.VENMO_HANDLE, paymentDueAt,
         items: { create: lockedCart.items.map(item => ({ productId: item.productId, quantity: item.quantity, unitPriceCents: item.product.priceCents, productName: item.product.name })) }
