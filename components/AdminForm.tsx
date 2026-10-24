@@ -17,26 +17,8 @@ export function ProductForm({ categories }: { categories: { id: string; name: st
     { value: "/menu-art/cookies.jpg", label: "🍪 Cookies" },
   ];
 
-  async function uploadImage(file: File) {
-    if (!file.size) return "";
-    const imageData = new FormData();
-    imageData.append("file", file);
-    const response = await fetch("/api/admin/uploads", { method: "POST", body: imageData });
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error ?? "Image upload failed.");
-    return body.url as string;
-  }
-
   async function submit(formData: FormData) {
     setMessage("");
-    let uploadedUrl = "";
-    try {
-      const file = formData.get("imageFile");
-      if (file instanceof File) uploadedUrl = await uploadImage(file);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Image upload failed.");
-      return;
-    }
 
     const priceDollars = Number(formData.get("priceDollars") ?? 0);
     const payload = {
@@ -50,7 +32,7 @@ export function ProductForm({ categories }: { categories: { id: string; name: st
       inventoryLimit: Number(formData.get("inventoryLimit") ?? 0),
       soldOut: formData.get("soldOut") === "on",
       active: true,
-      imageUrl: uploadedUrl || selectedArt || formData.get("imageUrl")
+      imageUrl: selectedArt || formData.get("imageUrl")
     };
     const response = await fetch("/api/admin/products", {
       method: "POST",
@@ -100,7 +82,6 @@ export function ProductForm({ categories }: { categories: { id: string; name: st
         </div>
       )}
       <input name="imageUrl" placeholder="Or paste image URL" type="url" />
-      <input name="imageFile" accept="image/jpeg,image/png,image/webp,image/gif" type="file" />
       <label className="flex items-center gap-2">
         <input className="h-4 w-4" name="soldOut" type="checkbox" />
         Mark sold out

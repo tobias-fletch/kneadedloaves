@@ -6,7 +6,7 @@ import { getCurrentOrderWindow } from "@/lib/order-window";
 import { checkoutClosedMessage } from "@/lib/weekly-window";
 import { prisma } from "@/lib/prisma";
 import { orderSchema } from "@/lib/validation";
-import { cartOwner, acceptsOrders } from "@/lib/order-rules";
+import { cartOwner, acceptsOrders, paymentDeadline } from "@/lib/order-rules";
 import { readJson, rateLimit } from "@/lib/request";
 import { queueEmail } from "@/lib/email-queue";
 import { processOrderEmails } from "@/lib/email-maintenance";
@@ -81,7 +81,7 @@ export async function POST(request: Request) {
         // soldOut is owner-controlled; inventoryLimit independently represents reserved stock.
       }
       const paymentReference = `${isAdminTestOrder(config, isAdmin) ? "KL-ADMIN-TEST-" : "KL-"}${randomUUID().toUpperCase()}`;
-      const paymentDueAt = new Date(Math.min(now.getTime() + config.holdMinutes * 60000, freshWindow.manualOpen ? Infinity : freshWindow.closesAt.getTime()));
+      const paymentDueAt = paymentDeadline(now, config.holdMinutes, freshWindow);
       const fulfillmentLocation = isDelivery ? `${parsed.data.deliveryAddress}\n${parsed.data.deliveryZip}` : describePickup(pickup!).text;
       // The flag lives in deliveryDistanceVerified; see deliveryDistanceOrderFields for the no-columns fallback.
       const distance = deliveryDistanceOrderFields(isDelivery, deliveryQuote, distanceColumns, pickup?.instructions);

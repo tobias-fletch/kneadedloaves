@@ -86,13 +86,13 @@ test("checklist rejects insecure email ports and noncanonical or local launch UR
   }
 });
 
-test("email admin renders truthful lifecycle and ignored-template notices without the legacy editor", async t => {
+test("email admin renders truthful lifecycle and no legacy template panel or editor", async t => {
   stub(t, prisma.emailJob, "findMany", async () => [{ id: "test-job", to: "customer@example.test", status: "FAILED", attempts: 1, lastError: "test delivery error" }]);
   const html = renderToStaticMarkup(await AdminEmailPage());
   assert.match(html, /reservation received and awaiting payment/);
   assert.match(html, /payment verified after independent bakery verification/);
   assert.match(html, /Sending an email does not verify payment/);
-  assert.match(html, /templates are not used by manual Venmo checkout/);
+  assert.doesNotMatch(html, /Legacy email templates/);
   assert.doesNotMatch(html, /<textarea|name="pickupSubject"|name="deliverySubject"|Save templates|Edit the confirmation emails/);
   assert.match(html, /action="\/api\/admin\/email\/retry"/);
   assert.match(html, /Retry delivery/);

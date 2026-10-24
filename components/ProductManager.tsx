@@ -47,26 +47,8 @@ export function ProductManager({
     { value: "/menu-art/cookies.jpg", label: "🍪 Cookies" },
   ];
 
-  async function uploadImage(file: File) {
-    if (!file.size) return "";
-    const imageData = new FormData();
-    imageData.append("file", file);
-    const response = await fetch("/api/admin/uploads", { method: "POST", body: imageData });
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error ?? "Image upload failed.");
-    return body.url as string;
-  }
-
   async function save(productId: string, formData: FormData) {
     setMessage("");
-    let uploadedUrl = "";
-    try {
-      const file = formData.get("imageFile");
-      if (file instanceof File) uploadedUrl = await uploadImage(file);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Image upload failed.");
-      return;
-    }
 
     const payload = {
       name: formData.get("name"),
@@ -80,7 +62,7 @@ export function ProductManager({
       soldOut: formData.get("soldOut") === "on",
       active: formData.get("active") === "on",
       imageId: formData.get("imageId") || null,
-      imageUrl: uploadedUrl || editArt || formData.get("imageUrl")
+      imageUrl: editArt || formData.get("imageUrl")
     };
     const response = await fetch(`/api/admin/products/${productId}`, {
       method: "PATCH",
@@ -147,7 +129,6 @@ export function ProductManager({
                 ))}
               </select>
               <input name="imageUrl" defaultValue={product.imageUrl ?? ""} placeholder="Or paste image URL" />
-              <input name="imageFile" accept="image/jpeg,image/png,image/webp,image/gif" type="file" />
               <div className="flex flex-wrap gap-3 text-sm font-semibold">
                 <label className="flex items-center gap-2">
                   <input className="h-4 w-4" name="active" type="checkbox" defaultChecked={product.active} />

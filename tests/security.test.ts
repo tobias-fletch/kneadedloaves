@@ -1,11 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes } from "crypto";
-import sharp from "sharp";
 import { cartOwner, acceptsOrders } from "../lib/order-rules";
 import { cartMutationSchema, orderSchema } from "../lib/validation";
 import { encryptSecret, decryptSecret } from "../lib/secrets";
-import { sanitizeImage } from "../lib/images";
 import { readJson } from "../lib/request";
 
 test("missing and malformed guest identities cannot produce an unfiltered cart query", () => {
@@ -35,12 +33,6 @@ test("secret encryption authenticates ciphertext and uses a unique nonce", () =>
   assert.equal(decryptSecret(a), "private-value");
   const pieces = a.split(":"); pieces[3] = "00".repeat(16);
   assert.throws(() => decryptSecret(pieces.join(":")));
-});
-test("uploaded bytes are decoded and re-encoded, not trusted by filename or MIME", async () => {
-  await assert.rejects(sanitizeImage(Buffer.from("<script>alert(1)</script>")));
-  const png = await sharp({ create: { width: 10, height: 10, channels: 3, background: "red" } }).png().toBuffer();
-  const result = await sanitizeImage(png);
-  assert.equal((await sharp(result).metadata()).format, "webp");
 });
 test("malformed, non-object and oversized JSON cannot reach handlers as valid input", async () => {
   for (const body of ["{", "null", "[]", JSON.stringify({ message: "x".repeat(65537) })]) {

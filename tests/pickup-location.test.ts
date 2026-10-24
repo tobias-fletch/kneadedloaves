@@ -5,15 +5,6 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { CheckoutForm } from "../components/CheckoutForm";
 import { describePickup, PICKUP_AREA } from "../lib/pickup-location";
-import { getOrderEmailTemplates } from "../lib/email";
-import { prisma } from "../lib/prisma";
-import type { TestContext } from "node:test";
-
-function stub(t: TestContext, target: object, key: string, implementation: (...args: unknown[]) => unknown) {
-  const original = Reflect.get(target, key);
-  Reflect.set(target, key, implementation);
-  t.after(() => { Reflect.set(target, key, original); });
-}
 
 test("pickup text uses the S Portland and Atlantic cross streets", () => {
   assert.equal(PICKUP_AREA, "S Portland Ave & Atlantic Ave, Brooklyn, NY 11217");
@@ -33,19 +24,6 @@ test("pickup migration is idempotent and does not rewrite orders", () => {
   assert.match(sql, /NOT EXISTS \(SELECT 1 FROM "PickupLocation"\)/);
   assert.match(sql, /btrim\("address"\) ILIKE 'Brooklyn, NY 11217'/);
   assert.doesNotMatch(sql, /UPDATE "Order"|DELETE FROM "Order"|DROP TABLE|street address is not on file/);
-});
-
-test("default pickup email template includes the cross streets and the handoff note", async (t) => {
-  for (const key of ["EMAIL_PICKUP_SUBJECT", "EMAIL_PICKUP_BODY", "EMAIL_DELIVERY_SUBJECT", "EMAIL_DELIVERY_BODY"]) {
-    const before = process.env[key];
-    delete process.env[key];
-    t.after(() => { if (before === undefined) delete process.env[key]; else process.env[key] = before; });
-  }
-  stub(t, prisma.appConfig, "findMany", async () => []);
-  const templates = await getOrderEmailTemplates();
-  assert.match(templates.pickupBody, /S Portland Ave & Atlantic Ave, Brooklyn, NY 11217/);
-  assert.match(templates.pickupBody, /confirms the exact handoff after payment/);
-  assert.doesNotMatch(templates.pickupBody, /123 Oven Lane|example\.com|street address is not on file/);
 });
 
 test("checkout shows the cross streets and keeps the handoff note", () => {
