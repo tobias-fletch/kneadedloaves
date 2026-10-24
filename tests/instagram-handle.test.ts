@@ -79,6 +79,7 @@ test("footer shows the instagram link beside contact and links to the contact pa
   assert.match(html, /aria-label="Kneaded Loaves on Instagram"/);
   assert.match(html, /@kneadedloaves/);
   assert.match(html, /href="\/contact"/);
-  assert.match(html, /All contact options/);
+  assert.match(html, />kneadedloaves@gmail\.com</);
+  assert.doesNotMatch(html, /mailto:/);
   assert.match(html, />Contact</);
 });

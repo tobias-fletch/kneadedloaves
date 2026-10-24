@@ -14,22 +14,25 @@ import { getContactDetails } from "@/lib/contact";
 import { getManualPaymentConfig } from "@/lib/manual-payment-config";
 import { storefrontCheckoutAccess } from "@/lib/storefront-ordering";
 import { prisma } from "@/lib/prisma";
+import { SHARE_DESCRIPTION } from "@/lib/site-metadata";
 
 const searchConsoleVerification = siteVerificationForHead();
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://kneadedloaves.com"),
   title: "Kneaded Loaves",
-  description: "Small-batch bakery ordering and admin dashboard.",
+  description: SHARE_DESCRIPTION,
   appleWebApp: { capable: true, title: "Kneaded Loaves" },
   openGraph: {
     siteName: "Kneaded Loaves",
     title: "Kneaded Loaves",
-    description: "Small-batch bakery ordering and admin dashboard.",
+    description: SHARE_DESCRIPTION,
     type: "website"
   },
   twitter: {
-    card: "summary_large_image"
+    card: "summary_large_image",
+    title: "Kneaded Loaves",
+    description: SHARE_DESCRIPTION
   },
   ...(searchConsoleVerification ? { verification: { google: searchConsoleVerification } } : {})
 };
@@ -48,9 +51,8 @@ const inter = Inter({ weight: ["400", "500", "600", "700", "800"], subsets: ["la
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const session = await getSession();
-  const [settings, deliveryZones, pickupLocations, appearance, contact, payment] = await Promise.all([
+  const [settings, pickupLocations, appearance, contact, payment] = await Promise.all([
     prisma.adminSettings.findFirst().catch(() => null),
-    prisma.deliveryZone.findMany({ where: { active: true } }).catch(() => []),
     prisma.pickupLocation.findMany({ where: { active: true } }).catch(() => []),
     getAppearance(),
     getContactDetails(),
@@ -81,7 +83,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               />
             </Link>
             <div className="ml-auto flex shrink-0 items-center gap-2">
-              <CartDrawerButton checkoutReady={checkoutReady} adminTestMode={orderingAccess?.adminTestMode ?? false} adminSetupReasons={orderingAccess?.adminSetupReasons ?? []} contactEmail={contact.email} deliveryZones={deliveryZones} pickupLocations={pickupLocations} />
+              <CartDrawerButton checkoutReady={checkoutReady} adminTestMode={orderingAccess?.adminTestMode ?? false} adminSetupReasons={orderingAccess?.adminSetupReasons ?? []} contactEmail={contact.email} pickupLocations={pickupLocations} />
               {session?.role === "ADMIN" ? (
                 <Link className="btn-primary px-3" href="/admin">
                   Admin

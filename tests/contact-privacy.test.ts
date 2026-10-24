@@ -38,7 +38,8 @@ test("contact page shows email only and never a phone hint or example.com addres
   stub(t, prisma.adminSettings, "findFirst", async () => ({ bakeryName: "Kneaded Loaves", notificationEmail: "orders@example.com", instagramHandle: "" }));
   const html = renderToStaticMarkup(await ContactPage());
   assert.match(html, /kneadedloaves@gmail\.com/);
-  assert.match(html, /mailto:kneadedloaves@gmail\.com/);
+  assert.doesNotMatch(html, /mailto:/, "the address is plain text, never a mailto link");
+  assert.match(html, /<form/);
   assert.doesNotMatch(html, /example\.com|555-0100|CONTACT_PHONE|Phone|tel:/);
 });
 
@@ -50,4 +51,24 @@ test("CONTACT_EMAIL overrides the default bakery mailbox", async (t) => {
   assert.equal((await getContactDetails()).email, "hello@kneadedloaves.com");
   assert.equal((await getContactDetails()).phone, "");
   assert.equal((await getContactDetails()).phoneHref, "");
+});
+
+test("the site has no mailto: links; contact buttons and links go to /contact", async () => {
+  const { readdirSync, readFileSync, statSync } = await import("node:fs");
+  const files: string[] = [];
+  const walk = (dir: string) => {
+    for (const name of readdirSync(dir)) {
+      const path = `${dir}/${name}`;
+      if (statSync(path).isDirectory()) walk(path);
+      else if (/\.(tsx?|mjs|js)$/.test(name)) files.push(path);
+    }
+  };
+  walk("app");
+  walk("components");
+  assert.ok(files.length > 20);
+  // TODO(contact/ordering-links): drop these exclusions once that branch lands after the ordering weekend;
+  // the checkout and ordering-status notices keep their mailto links until then.
+  const pendingOrderingFiles = new Set(["components/CheckoutForm.tsx", "components/OrderingStatus.tsx"]);
+  for (const file of files.filter((path) => !pendingOrderingFiles.has(path))) assert.doesNotMatch(readFileSync(file, "utf8"), /mailto:/i, file);
+  assert.match(readFileSync("components/ContactFooter.tsx", "utf8"), /href="\/contact"/);
 });

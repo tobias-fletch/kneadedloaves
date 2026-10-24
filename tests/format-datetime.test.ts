@@ -39,8 +39,10 @@ test("formatting names America/New_York and does not use the server zone", () =>
   const root = fileURLToPath(new URL("..", import.meta.url));
   const moduleUrl = new URL("../lib/format-datetime.ts", import.meta.url).href;
   for (const TZ of ["Pacific/Honolulu", "UTC", "Asia/Tokyo"]) {
-    const result = spawnSync(process.execPath, ["--import", "tsx", "-e", `
-      import { formatDeadline, formatFulfillmentDate } from ${JSON.stringify(moduleUrl)};
+    const result = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "-e", `
+      // Dynamic import: tsx may load the .ts file as CommonJS (Node < 22.12), where named ESM imports fail.
+      const loaded = await import(${JSON.stringify(moduleUrl)});
+      const { formatDeadline, formatFulfillmentDate } = loaded.formatDeadline ? loaded : loaded.default;
       const deadline = formatDeadline(new Date("2026-10-25T01:00:00.000Z"));
       const day = formatFulfillmentDate(new Date("2026-10-25T01:00:00.000Z"));
       console.log(JSON.stringify({ deadline, day }));

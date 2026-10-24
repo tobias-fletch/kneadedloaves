@@ -1,5 +1,5 @@
 import { MenuProductImage } from "@/components/MenuProductImage";
-import { format } from "date-fns";
+import { formatEasternDateTime, formatEasternDay, formatEasternWeekday } from "@/lib/format-datetime";
 import { AddToCartButton } from "@/components/AddToCartButton";
 import { DatabaseSetup, databaseErrorMessage } from "@/components/DatabaseSetup";
 import { GlutenFreeNote } from "@/components/GlutenFreeNote";
@@ -49,12 +49,12 @@ export default async function HomePage() {
               )}
               <p className="font-display mt-1 text-2xl uppercase tracking-wide">
                 {openWindow
-                  ? `Fulfillment: ${format(openWindow.fulfillmentDate, "EEEE, MMM d")}`
+                  ? `Fulfillment: ${formatEasternDay(openWindow.fulfillmentDate)}`
                   : nextWindow
-                    ? `Next opens: ${format(nextWindow.opensAt, "MMM d, h:mm a")}`
+                    ? `Next opens: ${formatEasternDateTime(nextWindow.opensAt)}`
                     : "Next window coming soon"}
               </p>
-              {openWindow ? <AlternateFulfillmentNote day={format(openWindow.fulfillmentDate, "EEEE")} email={contact.email} /> : null}
+              {openWindow ? <AlternateFulfillmentNote day={formatEasternWeekday(openWindow.fulfillmentDate)} email={contact.email} /> : null}
               <PickupAreaNote />
             </div>
           </div>
@@ -72,9 +72,9 @@ export default async function HomePage() {
               {adminSetupReasons.length > 0 ? null : unavailable ? <div className="mt-2"><OrderingUnavailableNotice email={contact.email} /></div> : (
                 <p className="mt-2 text-sm font-medium text-ink/70">
                   {orderingOpen
-                    ? `Checkout is open until ${format(openWindow!.closesAt, "MMM d, h:mm a")}. Fulfillment is ${format(openWindow!.fulfillmentDate, "EEEE, MMM d")}.`
+                    ? `Checkout is open until ${formatEasternDateTime(openWindow!.closesAt)}. Fulfillment is ${formatEasternDay(openWindow!.fulfillmentDate)}.`
                     : nextWindow
-                      ? `Browse now. Checkout opens ${format(nextWindow.opensAt, "MMM d, h:mm a")}.`
+                      ? `Browse now. Checkout opens ${formatEasternDateTime(nextWindow.opensAt)}.`
                       : "Browse now. The next ordering window will be announced soon."}
                 </p>
               )}
@@ -120,7 +120,7 @@ export default async function HomePage() {
         <div className="mt-5 grid gap-4 md:grid-cols-3">
           {events.length ? events.map((event) => (
             <div className="border-2 border-ink bg-page p-4 shadow-hard" key={event.id}>
-              <p className="text-sm font-black uppercase tracking-widest text-sage">{format(event.startsAt, "EEEE, MMM d, h:mm a")}</p>
+              <p className="text-sm font-black uppercase tracking-widest text-sage">{`${formatEasternWeekday(event.startsAt)}, ${formatEasternDateTime(event.startsAt)}`}</p>
               <h3 className="mt-1 text-lg font-black uppercase tracking-wide">{event.title}</h3>
               <p className="text-sm font-medium text-ink/70">{event.location}</p>
             </div>

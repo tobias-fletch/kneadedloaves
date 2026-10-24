@@ -4,18 +4,18 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { HISTORICAL_MIGRATIONS, migrationHistorySql, readMigrationPlan, runBuild } from "../scripts/build.mjs";
+import { HISTORICAL_MIGRATIONS, migrationHistorySql, readMigrationPlan, redactDiagnostics, runBuild } from "../scripts/build.mjs";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const databaseUrl = "postgresql://synthetic:do-not-log-this@127.0.0.1:55499/build_guard";
 const wrongProject = "postgresql://wrong:never-use-this@wrong.example.invalid/other_project";
 function harness(env, failAt = -1, failure = {}) {
-  const calls = [], logs = [];
-  const invoke = () => runBuild({ root, env, log: message => logs.push(message), run: (command, args, options) => {
+  const calls = [], logs = [], diagnostics = [];
+  const invoke = () => runBuild({ root, env, log: message => logs.push(message), diagnostic: message => diagnostics.push(message), run: (command, args, options) => {
     calls.push({ command, args, options });
     return calls.length === failAt ? { status: 1, stdout: "", stderr: "", ...failure } : { status: 0, stdout: "", stderr: "" };
   } });
-  return { calls, logs, invoke };
+  return { calls, logs, diagnostics, invoke };
 }
 test("local, preview, development and misspelled production builds never run database commands", () => {
   for (const VERCEL_ENV of [undefined, "preview", "development", "Production", " production"]) {
@@ -98,4 +98,43 @@ test("preflight accepts nonempty prefixes while postcheck requires all migration
   assert.match(preflight, /IF completed \? '20260706215755_admin_setup_config' THEN/);
   assert.match(preflight, /IF completed \? '20260914030000_production_hardening' THEN/);
   assert.doesNotMatch(preflight, /required_names/);
+});
+test("database steps never print diagnostics, even when they fail", () => {
+  for (const failAt of [1, 2, 3]) {
+    const h = harness({ VERCEL_ENV: "production", DATABASE_URL: databaseUrl }, failAt, { stdout: "migration log", stderr: `P1001 ${databaseUrl}` });
+    assert.throws(h.invoke, /release was stopped|owner|migration/);assert.deepEqual(h.diagnostics, []);
+  }
+});
+test("a failed Next.js build prints a redacted tail of its output", () => {
+  const jwt = "jwt-secret-value-that-must-not-leak-0123456789";
+  const env = { VERCEL_ENV: "preview", DATABASE_URL: databaseUrl, JWT_SECRET: jwt, URL_POSTGRES_PRISMA_URL: wrongProject, NODE_ENV: "production" };
+  const stderr = [
+    "Failed to compile.", "./app/layout.tsx", "Type error: Property 'x' does not exist.",
+    `Can't reach database server via ${databaseUrl}`, `other ${wrongProject} and postgres://u:p@h.example/db`,
+    `token ${jwt}`, "https://user:hunter2@example.com/path"
+  ].join("\n");
+  const h = harness(env, 2, { stdout: "Creating an optimized production build ...", stderr });
+  assert.throws(h.invoke, /Building Next\.js failed/);
+  assert.equal(h.diagnostics.length, 1);
+  const out = h.diagnostics[0];
+  assert.match(out, /Building Next\.js output \(redacted/);
+  assert.match(out, /Failed to compile\./);assert.match(out, /Type error: Property 'x' does not exist\./);
+  for (const leak of ["do-not-log-this", "never-use-this", jwt, "hunter2", "u:p@", "synthetic:"]) assert.ok(!out.includes(leak), leak);
+  assert.ok(!h.logs.join("\n").includes("do-not-log-this"));
+});
+test("a failed Prisma generate prints redacted diagnostics and never starts Next.js", () => {
+  const h = harness({ DATABASE_URL: databaseUrl }, 1, { stderr: `Error: engine download failed for ${databaseUrl}` });
+  assert.throws(h.invoke, /Generating Prisma client failed/);assert.equal(h.calls.length, 1);
+  assert.match(h.diagnostics[0], /engine download failed/);assert.ok(!h.diagnostics[0].includes("do-not-log-this"));
+});
+test("successful steps print no diagnostics", () => {
+  const h = harness({ VERCEL_ENV: "preview", DATABASE_URL: databaseUrl });h.invoke();assert.deepEqual(h.diagnostics, []);
+});
+test("redactDiagnostics keeps only the tail and bounds its size", () => {
+  const many = Array.from({ length: 500 }, (_, i) => `line ${i}`).join("\n");
+  const out = redactDiagnostics(many, {});
+  assert.equal(out.split("\n").length, 80);assert.match(out, /line 499$/);assert.ok(!out.includes("line 419\n"));
+  assert.ok(redactDiagnostics("x".repeat(50000), {}).length <= 12000);
+  assert.equal(redactDiagnostics("", {}), "");
+  assert.equal(redactDiagnostics("\u001b[31mType error\u001b[39m", {}), "Type error");
 });
