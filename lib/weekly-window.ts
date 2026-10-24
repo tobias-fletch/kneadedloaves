@@ -29,9 +29,9 @@ export type WeeklySettings = WeeklySchedule & {
 };
 
 /**
- * Defaults match the bakery's current week: orders close Saturday 9:00 PM ET and are
- * fulfilled Sunday. enabled = false, so nothing changes until the owner turns it on.
- * The open day/time is an assumption (Monday 9:00 AM ET) the owner should confirm.
+ * Defaults (confirmed by the owner): orders open Monday 9:00 AM ET, close Saturday 9:00 PM ET,
+ * and are fulfilled (pickup/delivery) Sunday at noon ET. enabled = false, so nothing changes
+ * until the owner turns it on.
  */
 export const DEFAULT_WEEKLY_SETTINGS: WeeklySettings = {
   enabled: false,
@@ -272,4 +272,43 @@ export function checkoutClosedMessage(resolution: WeeklyResolution | null) {
   if (resolution.status === "paused") return resolution.message ? `Ordering is paused. ${resolution.message}` : "Ordering is paused.";
   if (resolution.status === "open") return "This week's orders are full.";
   return resolution.next ? `Ordering is closed. Next orders open ${formatWindowMoment(resolution.next.opensAt)}.` : "Ordering is closed. The next window will be announced soon.";
+}
+
+/** A stored WeeklyOrderWeek row, as far as its one-week override goes. */
+export type StoredWeekOverride = {
+  weekKey: string;
+  overrideOpensAt?: Date | null;
+  overrideClosesAt?: Date | null;
+  overrideFulfillmentDate?: Date | null;
+  skip?: boolean;
+  message?: string | null;
+};
+
+export function hasOverrideContent(row: StoredWeekOverride) {
+  return Boolean(row.overrideOpensAt || row.overrideClosesAt || row.overrideFulfillmentDate || row.skip || row.message?.trim());
+}
+
+/**
+ * One-week overrides are keyed by the date of the scheduled close. If the close day changes,
+ * upcoming overrides on the old day no longer match any week and would silently stop applying.
+ * Returns the week keys (today or later, Eastern) whose overrides a save would drop.
+ */
+export function overridesDroppedBySchedule(next: Pick<WeeklySchedule, "closeWeekday">, rows: StoredWeekOverride[], now = new Date()) {
+  const today = keyOf(easternCivilDate(now));
+  return rows
+    .filter((row) => isWeekKey(row.weekKey) && row.weekKey >= today && hasOverrideContent(row))
+    .filter((row) => weekdayOf(civilFromKey(row.weekKey)) !== next.closeWeekday)
+    .map((row) => row.weekKey)
+    .sort();
+}
+
+/** The save decision: refuse to drop overrides unless the request explicitly confirms it. */
+export function planWeeklySave(next: Pick<WeeklySchedule, "closeWeekday">, rows: StoredWeekOverride[], confirmDropOverrides: unknown, now = new Date()) {
+  const dropKeys = overridesDroppedBySchedule(next, rows, now);
+  const confirmed = confirmDropOverrides === true;
+  return { dropKeys, blocked: dropKeys.length > 0 && !confirmed };
+}
+
+export function droppedOverridesMessage(count: number) {
+  return `Changing the close day removes ${count} one-week change${count === 1 ? "" : "s"} (custom times or skipped weeks). Confirm to save anyway.`;
 }

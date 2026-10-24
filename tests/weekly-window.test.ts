@@ -3,7 +3,7 @@ import test from "node:test";
 import { getCurrentOrderWindow, resetWeeklyTableCache } from "../lib/order-window";
 import { acceptsOrders } from "../lib/order-rules";
 import {
-  DEFAULT_WEEKLY_SETTINGS, applyOverride, checkoutClosedMessage, describeWeeklyWindow, parseWeeklySettings,
+  DEFAULT_WEEKLY_SETTINGS, applyOverride, overridesDroppedBySchedule, planWeeklySave, droppedOverridesMessage, checkoutClosedMessage, describeWeeklyWindow, parseWeeklySettings,
   resolveWeeklyWindow, scheduledWeek, weekKeysAround, type WeekOverride, type WeeklySettings
 } from "../lib/weekly-window";
 
@@ -161,4 +161,37 @@ test("weekly mode off (or tables missing): legacy one-off windows exactly as bef
   assert.equal(result.openWindow?.id, "live");
   assert.equal(result.weekly, null);
   resetWeeklyTableCache();
+});
+
+test("defaults: open Monday 9:00 AM, close Saturday 9:00 PM, Sunday noon pickup/delivery, weekly mode off", () => {
+  assert.deepEqual(
+    { open: [DEFAULT_WEEKLY_SETTINGS.openWeekday, DEFAULT_WEEKLY_SETTINGS.openTime], close: [DEFAULT_WEEKLY_SETTINGS.closeWeekday, DEFAULT_WEEKLY_SETTINGS.closeTime], fulfill: DEFAULT_WEEKLY_SETTINGS.fulfillmentWeekday, enabled: DEFAULT_WEEKLY_SETTINGS.enabled },
+    { open: [1, "09:00"], close: [6, "21:00"], fulfill: 0, enabled: false }
+  );
+  // Fulfillment is stored at noon ET (Sun Nov 8, 2026 is EST, so 17:00Z).
+  assert.equal(scheduledWeek(DEFAULT_WEEKLY_SETTINGS, "2026-11-07").fulfillmentDate.toISOString(), "2026-11-08T17:00:00.000Z");
+});
+
+const overrideRows = [
+  { weekKey: "2026-10-17", skip: true }, // past: ignored
+  { weekKey: "2026-10-31", skip: true, message: "Away" },
+  { weekKey: "2026-11-07", overrideClosesAt: new Date("2026-11-07T23:00:00Z") },
+  { weekKey: "2026-11-14" }, // row exists (linked window) but no override content: nothing to lose
+  { weekKey: "2026-11-21", message: "   " }
+];
+const satNoon = at("2026-10-24T16:00:00Z");
+
+test("changing the close day reports the upcoming overrides it would drop", () => {
+  assert.deepEqual(overridesDroppedBySchedule({ closeWeekday: 5 }, overrideRows, satNoon), ["2026-10-31", "2026-11-07"]);
+  assert.deepEqual(overridesDroppedBySchedule({ closeWeekday: 6 }, overrideRows, satNoon), []);
+});
+
+test("save refuses to drop overrides without an explicit confirm flag", () => {
+  assert.deepEqual(planWeeklySave({ closeWeekday: 5 }, overrideRows, undefined, satNoon), { dropKeys: ["2026-10-31", "2026-11-07"], blocked: true });
+  assert.equal(planWeeklySave({ closeWeekday: 5 }, overrideRows, "true", satNoon).blocked, true, "only boolean true confirms");
+  assert.equal(planWeeklySave({ closeWeekday: 5 }, overrideRows, 1, satNoon).blocked, true);
+  assert.deepEqual(planWeeklySave({ closeWeekday: 5 }, overrideRows, true, satNoon), { dropKeys: ["2026-10-31", "2026-11-07"], blocked: false });
+  assert.deepEqual(planWeeklySave({ closeWeekday: 6 }, overrideRows, undefined, satNoon), { dropKeys: [], blocked: false });
+  assert.equal(droppedOverridesMessage(2), "Changing the close day removes 2 one-week changes (custom times or skipped weeks). Confirm to save anyway.");
+  assert.match(droppedOverridesMessage(1), /removes 1 one-week change \(/);
 });
