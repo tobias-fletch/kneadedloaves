@@ -233,3 +233,12 @@ test("payment label column leaves room for values on phones", () => {
   assert.ok(html.includes('width="112" style="width:112px;'));
   assert.ok(!html.includes('width="148"'));
 });
+
+test("customer reservation email gives the Venmo-note warning once, in the next steps", () => {
+  const email = renderOrderEmail("customer-reservation", pickup());
+  const warning = "Put only the payment reference in the Venmo note. Do not include your address or other private details.";
+  assert.equal(email.text.split(warning).length - 1, 1);
+  assert.equal(email.html.split(warning).length - 1, 1);
+  assert.match(email.text, /2\. Put only the payment reference in the Venmo note\./);
+  assert.match(email.text, /Payment has not been confirmed\./);
+});
