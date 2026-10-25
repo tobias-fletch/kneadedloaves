@@ -240,16 +240,42 @@ export const PREVIEW_SCRUB_TABLES = Object.freeze([
   "OrderItem", "PaymentEvent", "EmailJob", "Order", "CartItem", "Cart", "CustomerProfile",
   "PasswordReset", "RateLimit", "EmailSubscriber", "SocialPostAsset", "SocialPost", "SocialPlatformAccount", "User"
 ]);
+const scrubList = PREVIEW_SCRUB_TABLES.map(t => `'${t}'`).join(", ");
+// Tolerant of tables that do not exist (an empty or older branch): only existing
+// tables are truncated, in one statement so foreign keys between them are fine.
 export const PREVIEW_SCRUB_SQL = `BEGIN;
 SET LOCAL statement_timeout = '60s';
 SET LOCAL lock_timeout = '10s';
-TRUNCATE ${PREVIEW_SCRUB_TABLES.map(t => `"${t}"`).join(", ")};
-DELETE FROM "AppConfig" WHERE "secret" = true;
-DO $scrub_check$ BEGIN
+DO $scrub$
+DECLARE names text;
+BEGIN
+  SELECT string_agg(format('%I', t), ', ') INTO names FROM unnest(ARRAY[${scrubList}]) AS t WHERE to_regclass(format('%I', t)) IS NOT NULL;
+  IF names IS NOT NULL THEN EXECUTE 'TRUNCATE ' || names; END IF;
+  IF to_regclass('"AppConfig"') IS NOT NULL THEN DELETE FROM "AppConfig" WHERE "secret" = true; END IF;
   IF EXISTS (SELECT 1 FROM "Order") OR EXISTS (SELECT 1 FROM "User") OR EXISTS (SELECT 1 FROM "EmailJob") THEN RAISE EXCEPTION 'KNEADED_SCRUB_INCOMPLETE'; END IF;
-END $scrub_check$;
+END $scrub$;
 COMMIT;
 `;
+
+const sqlText = value => `'${String(value).replaceAll("'", "''")}'`;
+const sqlTextArray = values => `ARRAY[${values.map(sqlText).join(", ")}]::text[]`;
+/** Seeds the real public menu (prisma/preview-menu.json) only when the preview has no products. */
+export function previewMenuSql(root) {
+  const menu = JSON.parse(readFileSync(path.join(root, "prisma", "preview-menu.json"), "utf8"));
+  const inserts = menu.products.map(p => `    INSERT INTO "Product" ("id", "name", "slug", "description", "priceCents", "allergens", "ingredients", "categoryId", "updatedAt")
+      VALUES (${sqlText(`preview-${p.slug}`)}, ${sqlText(p.name)}, ${sqlText(p.slug)}, ${sqlText(p.description)}, ${Number.parseInt(p.priceCents, 10)}, ARRAY[]::text[], ${sqlTextArray(p.ingredients)}, 'preview-category', now());
+    INSERT INTO "ProductImage" ("id", "productId", "url", "alt") VALUES (${sqlText(`preview-img-${p.slug}`)}, ${sqlText(`preview-${p.slug}`)}, ${sqlText(p.image)}, ${sqlText(p.name)});`).join("\n");
+  return `BEGIN;
+DO $menu$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM "Product") THEN
+    INSERT INTO "Category" ("id", "name", "slug") VALUES ('preview-category', ${sqlText(menu.category.name)}, ${sqlText(menu.category.slug)}) ON CONFLICT DO NOTHING;
+${inserts}
+  END IF;
+END $menu$;
+COMMIT;
+`;
+}
 
 const sleepSync = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
@@ -328,8 +354,9 @@ export function runBuild({ root = process.cwd(), env = process.env, run = spawnS
     log(`Preview database: own Neon branch (host ${hostFingerprint(previewHost)}), production host(s) ${productionDatabaseHosts(env).map(hostFingerprint).join(", ")}; not production.`);
     const previewEnv = { ...env, DATABASE_URL: migrationDatabaseUrl(previewUrl) };
     const execute = ["db", "execute", "--schema", "prisma/schema.prisma", "--stdin"];
-    step("Scrubbing customer data from the preview branch", prisma, execute, previewEnv, PREVIEW_SCRUB_SQL, false, false, MIGRATE_RETRY_DELAYS_MS);
     step("Applying migrations to the preview branch", prisma, ["migrate", "deploy", "--schema", "prisma/schema.prisma"], previewEnv, undefined, false, false, MIGRATE_RETRY_DELAYS_MS);
+    step("Removing customer data from the preview branch", prisma, execute, previewEnv, PREVIEW_SCRUB_SQL, false, false, MIGRATE_RETRY_DELAYS_MS);
+    step("Seeding the real menu into the preview branch (only if it has none)", prisma, execute, previewEnv, previewMenuSql(root), false, false, MIGRATE_RETRY_DELAYS_MS);
   } else {
     log("Skipping database migrations outside a production deploy.");
   }
