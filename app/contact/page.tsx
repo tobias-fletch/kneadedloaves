@@ -5,10 +5,25 @@ import { ContactForm } from "@/components/ContactForm";
 import { CONTACT_FORM_ID } from "@/lib/contact-form-anchor";
 import { getContactDetails, instagramProfileUrl } from "@/lib/contact";
 
+const CONTACT_TITLE = "Contact | Kneaded Loaves";
+const CONTACT_DESCRIPTION = "Questions about an order, special requests, pickup timing or delivery notes? Send Kneaded Loaves a message and I'll reply by email.";
+
 export const metadata: Metadata = {
-  title: "Contact | Kneaded Loaves",
-  description: "Questions about an order, special requests, pickup timing or delivery notes? Send Kneaded Loaves a message.",
-  alternates: { canonical: "/contact" }
+  title: CONTACT_TITLE,
+  description: CONTACT_DESCRIPTION,
+  alternates: { canonical: "/contact" },
+  openGraph: {
+    siteName: "Kneaded Loaves",
+    title: CONTACT_TITLE,
+    description: CONTACT_DESCRIPTION,
+    url: "/contact",
+    type: "website"
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: CONTACT_TITLE,
+    description: CONTACT_DESCRIPTION
+  }
 };
 
 export default async function ContactPage() {
