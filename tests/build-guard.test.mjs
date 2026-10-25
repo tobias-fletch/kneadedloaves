@@ -19,8 +19,8 @@ function harness(env, failAt = -1, failure = {}) {
   return { calls, logs, diagnostics, sleeps, invoke };
 }
 const dbUrl = migrationDatabaseUrl(databaseUrl);
-test("local, preview, development and misspelled production builds never run database commands", () => {
-  for (const VERCEL_ENV of [undefined, "preview", "development", "Production", " production"]) {
+test("local, development and misspelled production builds never run database commands", () => {
+  for (const VERCEL_ENV of [undefined, "development", "Preview", "Production", " production"]) {
     const h = harness({ VERCEL_ENV, DATABASE_URL: databaseUrl });h.invoke();
     assert.equal(h.calls.length, 2);
     assert.deepEqual(h.calls.map(call => call.args.slice(1)), [["generate", "--schema", "prisma/schema.prisma"], ["build"]]);
@@ -110,7 +110,7 @@ test("database steps never print diagnostics, even when they fail", () => {
 });
 test("a failed Next.js build prints a redacted tail of its output", () => {
   const jwt = "jwt-secret-value-that-must-not-leak-0123456789";
-  const env = { VERCEL_ENV: "preview", DATABASE_URL: databaseUrl, JWT_SECRET: jwt, URL_POSTGRES_PRISMA_URL: wrongProject, NODE_ENV: "production" };
+  const env = { VERCEL_ENV: "development", DATABASE_URL: databaseUrl, JWT_SECRET: jwt, URL_POSTGRES_PRISMA_URL: wrongProject, NODE_ENV: "production" };
   const stderr = [
     "Failed to compile.", "./app/layout.tsx", "Type error: Property 'x' does not exist.",
     `Can't reach database server via ${databaseUrl}`, `other ${wrongProject} and postgres://u:p@h.example/db`,
@@ -131,7 +131,7 @@ test("a failed Prisma generate prints redacted diagnostics and never starts Next
   assert.match(h.diagnostics[0], /engine download failed/);assert.ok(!h.diagnostics[0].includes("do-not-log-this"));
 });
 test("successful steps print no diagnostics", () => {
-  const h = harness({ VERCEL_ENV: "preview", DATABASE_URL: databaseUrl });h.invoke();assert.deepEqual(h.diagnostics, []);
+  const h = harness({ VERCEL_ENV: "preview", DATABASE_URL: databaseUrl, URL_POSTGRES_PRISMA_URL: wrongProject });h.invoke();assert.deepEqual(h.diagnostics, []);
 });
 test("redactDiagnostics keeps only the tail and bounds its size", () => {
   const many = Array.from({ length: 500 }, (_, i) => `line ${i}`).join("\n");

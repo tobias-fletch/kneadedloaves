@@ -6,7 +6,7 @@ export async function GET() {
   const encryptionKeyValid = configEncryptionKeyStatus().valid;
   try {
     await prisma.$queryRaw`SELECT 1`;
-    return NextResponse.json({ status: "ok", encryptionKeyValid }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ status: "ok", encryptionKeyValid, ...(process.env.VERCEL_ENV === "preview" ? { database: "preview-branch" } : {}) }, { headers: { "Cache-Control": "no-store" } });
   } catch {
     return NextResponse.json({ status: "unavailable", encryptionKeyValid }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }

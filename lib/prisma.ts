@@ -1,6 +1,12 @@
 import { PrismaClient } from "@prisma/client";
+import { prismaDatasourceUrl } from "@/lib/preview-database";
+
+// Vercel previews connect only to their own scrubbed Neon branch (Hub #113);
+// production and local development keep using DATABASE_URL unchanged.
+const datasourceUrl = prismaDatasourceUrl(process.env);
 
 const createClient = () => new PrismaClient({
+  ...(datasourceUrl ? { datasourceUrl } : {}),
   log: process.env.NODE_ENV === "development" ? ["error", "warn"] : ["error"],
   // Hub #63 distance columns are omitted from every default read and RETURNING
   // clause so the app keeps working on a database where the additive migration
