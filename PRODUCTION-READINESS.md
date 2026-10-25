@@ -21,4 +21,4 @@ Production checkout is not hard-disabled in code. It stays closed until `getManu
 
 Full dependency audit remains strict. Report unpatched development-only findings honestly rather than weakening the gate. Production audit must be clean.
 
-Unrelated pre-existing upload-handler and automatic-social-publishing gaps are not resolved by this payment/security scope.
+Unrelated pre-existing upload-handler gaps are not resolved by this payment/security scope.

@@ -1,36 +1,24 @@
 import Link from "next/link";
 import { requireAdmin } from "@/lib/auth";
-
-const links = [
-  ["/admin", "Overview"],
-  ["/admin/products", "Products"],
-  ["/admin/orders", "Orders"],
-  ["/admin/windows", "Windows"],
-  ["/admin/events", "Events"],
-  ["/admin/customers", "Customers"],
-  ["/admin/email", "Email"],
-  ["/admin/social", "Social"],
-  ["/admin/setup", "Setup"],
-  ["/admin/test-checkout", "Test checkout"],
-  ["/account", "Account"],
-];
+import { AdminNav } from "@/components/AdminNav";
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   await requireAdmin();
   return (
-    <main className="section space-y-5">
-      <div>
-        <h1 className="text-3xl font-black">Bakery control panel</h1>
-        <p className="mt-1 text-sm text-ink/70">Manage menu, orders, windows, customers, events, and social planning.</p>
-      </div>
-      <nav className="flex gap-2 overflow-x-auto pb-2">
-        {links.map(([href, label]) => (
-          <Link className="btn-secondary whitespace-nowrap" href={href} key={href}>{label}</Link>
-        ))}
-        <form action="/api/auth/logout" method="post" className="shrink-0">
-          <button type="submit" className="btn-secondary whitespace-nowrap">Log out</button>
-        </form>
-      </nav>
+    <main className="section space-y-4 sm:space-y-5">
+      <header className="flex flex-wrap items-end justify-between gap-3 border-b-2 border-ink pb-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-widest text-sage">Kneaded Loaves admin</p>
+          <h1 className="text-2xl font-black sm:text-3xl">Bakery control panel</h1>
+        </div>
+        <div className="flex gap-2 print:hidden">
+          <Link className="border-2 border-ink bg-page px-3 py-1.5 text-xs font-black uppercase tracking-wide hover:bg-butter" href="/account">Account</Link>
+          <form action="/api/auth/logout" method="post">
+            <button type="submit" className="border-2 border-ink bg-page px-3 py-1.5 text-xs font-black uppercase tracking-wide hover:bg-butter">Log out</button>
+          </form>
+        </div>
+      </header>
+      <AdminNav />
       {children}
     </main>
   );

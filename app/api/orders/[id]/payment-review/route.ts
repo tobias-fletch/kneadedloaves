@@ -2,7 +2,8 @@ import { createHash } from "crypto";
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { lockOrder } from "@/lib/manual-payments";
+import { expireOrder, lockOrder } from "@/lib/manual-payments";
+import { shouldAutoExpire } from "@/lib/order-rules";
 import { rateLimit, readJson } from "@/lib/request";
 import { queueEmail } from "@/lib/email-queue";
 import { detailsFromOrder, fulfillmentDateFor, renderOrderEmail } from "@/lib/order-email";
@@ -18,6 +19,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       if (!validToken && (!session || (session.sub !== order.userId && session.role !== "ADMIN"))) throw new Error("Not found");
       if (order.paymentMethod !== "VENMO" || ["VERIFIED", "REFUNDED"].includes(order.paymentState)) return;
       if (order.paymentReviewRequestedAt) return;
+      // A reservation already past its deadline expires first; a late "I sent payment" is recorded for reconciliation but does not revive it.
+      if (shouldAutoExpire(order)) await expireOrder(tx, id);
       await tx.order.update({ where: { id }, data: { paymentReviewRequestedAt: new Date(), paymentState: "REVIEW" } });
       await tx.paymentEvent.create({ data: { orderId: id, type: "CUSTOMER_REVIEW", actorId: session?.sub, note: "Customer reports payment; no payment has been verified." } });
       const settings = await tx.adminSettings.findFirst();
@@ -26,6 +29,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         await queueEmail({ dedupeKey: `payment-review:${id}`, to: settings.notificationEmail, subject: rendered.subject, body: rendered.text, html: rendered.html }, tx);
       }
     });
-    return NextResponse.json({ message: "Review requested. Payment has not been verified; this does not extend your reservation deadline." });
+    return NextResponse.json({ message: "Payment check requested. Your order stays reserved until the bakery confirms your payment in Venmo." });
   } catch { return NextResponse.json({ error: "Order not found or unavailable." }, { status: 404 }); }
 }

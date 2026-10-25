@@ -11,7 +11,7 @@ type SetupItem = {
   detail: string;
   href?: string;
   complete: boolean;
-  group: "Storefront" | "Payments" | "Fulfillment" | "Notifications" | "Social" | "Launch";
+  group: "Storefront" | "Payments" | "Fulfillment" | "Notifications" | "Launch";
 };
 
 function isPublicShopUrl(value: string) {
@@ -30,7 +30,6 @@ export async function getSetupChecklist() {
     activeWindows,
     futureWindows,
     pickupLocations,
-    socialAccounts,
     subscribers
   ] = await Promise.all([
     prisma.adminSettings.findFirst(),
@@ -54,31 +53,15 @@ export async function getSetupChecklist() {
       }
     }),
     prisma.pickupLocation.count({ where: { active: true } }),
-    prisma.socialPlatformAccount.count({ where: { connected: true } }),
     prisma.emailSubscriber.count({ where: { active: true } })
   ]);
   const deliveryOriginConfigured = originFromEnv() !== null;
 
-  const configRead = await readAppConfig([
-    ...paymentConfigKeys,
-    "INSTAGRAM_GRAPH_TOKEN",
-    "FACEBOOK_PAGE_TOKEN",
-    "TIKTOK_CLIENT_KEY",
-    "TIKTOK_CLIENT_SECRET",
-    "YOUTUBE_CLIENT_ID",
-    "YOUTUBE_CLIENT_SECRET"
-  ]);
+  const configRead = await readAppConfig([...paymentConfigKeys]);
   const config = configRead.values;
   const payment = { ...config, ...paymentReadiness(config) };
   const emailReady = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM"].every((key) => Boolean(config[key as keyof typeof config])) && [465, 587, 2525].includes(Number(config.SMTP_PORT));
   const appUrl = config.APP_URL;
-  const socialCredentialGroups = [
-    ["INSTAGRAM_GRAPH_TOKEN"],
-    ["FACEBOOK_PAGE_TOKEN"],
-    ["TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET"],
-    ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET"]
-  ];
-  const connectedSocialApis = socialCredentialGroups.filter((group) => group.every((key) => Boolean(config[key as keyof typeof config]))).length;
   const jwtSecret = payment.JWT_SECRET;
 
   const items: SetupItem[] = [
@@ -172,18 +155,10 @@ export async function getSetupChecklist() {
     },
     {
       id: "social-handles",
-      group: "Social",
-      title: "Add social media handles",
-      detail: "Add Instagram, TikTok, Facebook, or YouTube handles in admin settings.",
-      complete: Boolean(settings?.instagramHandle || settings?.tiktokHandle || settings?.facebookHandle || settings?.youtubeHandle)
-    },
-    {
-      id: "social-api-keys",
-      group: "Social",
-      title: "Connect social API credentials",
-      detail: "Add credentials for Instagram, Facebook, TikTok, and YouTube if you want approved posts to publish through APIs.",
-      href: "/admin/setup",
-      complete: connectedSocialApis === socialCredentialGroups.length || socialAccounts > 0
+      group: "Storefront",
+      title: "Add social media links",
+      detail: "Add Instagram or Facebook handles in admin settings so they show in the site footer.",
+      complete: Boolean(settings?.instagramHandle || settings?.facebookHandle)
     },
     {
       id: "email-list",

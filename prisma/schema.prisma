@@ -27,6 +27,7 @@ enum OrderStatus {
   CANCELLED
 }
 
+// LEGACY (Social tab removed Oct 2026): kept so stored data is preserved. No app code reads or writes this anymore.
 enum SocialPlatform {
   INSTAGRAM
   TIKTOK
@@ -34,6 +35,7 @@ enum SocialPlatform {
   YOUTUBE_SHORTS
 }
 
+// LEGACY (Social tab removed Oct 2026): kept so stored data is preserved. No app code reads or writes this anymore.
 enum SocialPostStatus {
   DRAFT
   NEEDS_REVIEW
@@ -283,6 +285,7 @@ model PopupEvent {
   updatedAt   DateTime   @updatedAt
 }
 
+// LEGACY (Social tab removed Oct 2026): kept so stored data is preserved. No app code reads or writes this anymore.
 model SocialPost {
   id             String             @id @default(cuid())
   title          String
@@ -305,6 +308,7 @@ model SocialPost {
   updatedAt       DateTime           @updatedAt
 }
 
+// LEGACY (Social tab removed Oct 2026): kept so stored data is preserved. No app code reads or writes this anymore.
 model SocialPlatformAccount {
   id            String         @id @default(cuid())
   platform      SocialPlatform
@@ -316,6 +320,7 @@ model SocialPlatformAccount {
   updatedAt     DateTime       @updatedAt
 }
 
+// LEGACY (Social tab removed Oct 2026): kept so stored data is preserved. No app code reads or writes this anymore.
 model SocialPostAsset {
   id           String     @id @default(cuid())
   socialPostId String
@@ -325,6 +330,7 @@ model SocialPostAsset {
   socialPost   SocialPost @relation(fields: [socialPostId], references: [id], onDelete: Cascade)
 }
 
+// LEGACY (Social tab removed Oct 2026): kept so stored data is preserved. No app code reads or writes this anymore.
 model ContentTemplate {
   id        String           @id @default(cuid())
   name      String
@@ -355,7 +361,7 @@ model AdminSettings {
   tiktokHandle               String?
   facebookHandle             String?
   youtubeHandle              String?
-  defaultHashtags            String[]
+  defaultHashtags            String[] // LEGACY: Social tab only; kept, unused
   orderingOpenMessage        String
   orderingClosedMessage      String
   emailNotificationsEnabled  Boolean  @default(false)

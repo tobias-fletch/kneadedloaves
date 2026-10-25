@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { queueEmail } from "@/lib/email-queue";
 import { detailsFromOrder, fulfillmentDateFor, renderOrderEmail, type OrderEmailKind } from "@/lib/order-email";
 import { runBounded } from "@/lib/worker-batch";
+import { shouldAutoExpire, verifyWithinDeadline } from "@/lib/order-rules";
 
 export const paymentEvidenceSchema = z.object({
   action: z.enum(["verify", "review", "refund"]),
@@ -35,7 +36,8 @@ async function queueLifecycleEmail(tx: Prisma.TransactionClient, order: Awaited<
 }
 export async function expireOrder(tx: Prisma.TransactionClient, id: string, now = new Date()) {
   const order = await lockOrder(tx, id);
-  if (order.paymentMethod !== "VENMO" || order.status !== "PENDING" || !order.paymentDueAt || order.paymentDueAt > now || order.paymentState === "VERIFIED") return false;
+  // Orders the customer says they paid are never expired automatically; Tobias confirms or cancels them.
+  if (!shouldAutoExpire(order, now)) return false;
   await restoreInventory(tx, order);
   await tx.order.update({ where: { id }, data: { status: "CANCELLED" } });
   await tx.paymentEvent.create({ data: { orderId: id, type: "EXPIRED", note: "Unpaid reservation expired; any late payment needs independent reconciliation." } });
@@ -43,7 +45,7 @@ export async function expireOrder(tx: Prisma.TransactionClient, id: string, now 
   return true;
 }
 async function expireUnpaidOrdersOnce(now: Date) {
-  const due = await prisma.order.findMany({ where: { paymentMethod: "VENMO", status: "PENDING", paymentDueAt: { lte: now }, paymentState: { not: "VERIFIED" } }, select: { id: true }, take: 100, orderBy: { paymentDueAt: "asc" } });
+  const due = await prisma.order.findMany({ where: { paymentMethod: "VENMO", status: "PENDING", paymentDueAt: { lte: now }, paymentState: { not: "VERIFIED" }, paymentReviewRequestedAt: null }, select: { id: true }, take: 100, orderBy: { paymentDueAt: "asc" } });
   let expired = 0;
   for (const order of due) if (await prisma.$transaction(tx => expireOrder(tx, order.id, now))) expired++;
   return expired;
@@ -81,7 +83,7 @@ export async function recordPaymentEvidence(tx: Prisma.TransactionClient, id: st
     throw new Error("That provider transaction is already recorded. Review the existing record; do not reuse it.");
   }
   if (input.action === "verify") {
-    if (order.status !== "PENDING" || order.inventoryRestored || order.paymentState === "VERIFIED" || order.paymentState === "REFUNDED" || !order.paymentDueAt || order.paymentDueAt <= now || receivedAt > order.paymentDueAt) throw new Error("This reservation is no longer eligible for payment verification. Record a review for reconciliation.");
+    if (order.status !== "PENDING" || order.inventoryRestored || order.paymentState === "VERIFIED" || order.paymentState === "REFUNDED" || !verifyWithinDeadline(order, receivedAt, now)) throw new Error("This reservation is no longer eligible for payment verification. Record a review for reconciliation.");
     if (input.amountCents !== order.totalCents || input.currency !== order.currency) throw new Error("Payment must exactly match the order total and currency. Record discrepancies for review.");
     if (order.paymentEvents.some(event => event.type === "REVIEW" || event.type === "REFUND")) throw new Error("This order has a payment discrepancy. Resolve it through owner reconciliation; automatic fulfillment is blocked.");
     await tx.order.update({ where: { id }, data: { status: "PAID", paymentState: "VERIFIED", paymentVerifiedAt: now, paymentVerifiedBy: actorId, verifiedAmountCents: input.amountCents, providerTransactionId: input.providerTransactionId } });

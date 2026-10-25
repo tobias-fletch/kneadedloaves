@@ -93,7 +93,7 @@ async function main() {
   ];
 
   for (const product of seededProducts) {
-    const created = await prisma.product.upsert({
+    await prisma.product.upsert({
       where: { slug: product.slug },
       update: {},
       create: {
@@ -106,20 +106,6 @@ async function main() {
         inventoryLimit: product.inventoryLimit,
         categoryId: product.categoryId,
         images: { create: { url: product.image, alt: product.name } }
-      }
-    });
-    await prisma.socialPost.upsert({
-      where: { id: `seed-${product.slug}` },
-      update: {},
-      create: {
-        id: `seed-${product.slug}`,
-        title: `Launch: ${product.name}`,
-        caption: `${product.name} is on the next menu in limited quantities.`,
-        hashtags: ["#microbakery", "#smallbatch", "#freshbread"],
-        platforms: ["INSTAGRAM", "FACEBOOK"],
-        status: "DRAFT",
-        productId: created.id,
-        authorId: admin.id
       }
     });
   }
@@ -206,7 +192,6 @@ async function main() {
       deliveryRules: "Delivery is available for approved ZIP codes only.",
       pickupRules: "Pickup is at S Portland Ave & Atlantic Ave, Brooklyn, NY 11217. The exact handoff is confirmed after payment.",
       instagramHandle: "@littlehearth",
-      defaultHashtags: ["#littlehearth", "#microbakery", "#brooklynbread"],
       orderingOpenMessage: "Orders are open for the next bake.",
       orderingClosedMessage: "Orders are closed, but the menu is here to browse.",
       emailNotificationsEnabled: false,

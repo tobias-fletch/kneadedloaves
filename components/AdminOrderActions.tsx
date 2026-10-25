@@ -2,13 +2,13 @@
 import React, { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatMoney } from "@/lib/money";
-type Props = { orderId: string; status: string; paymentMethod: string | null; paymentState: string; totalCents: number; currency: string; reference: string | null; dueAt: string | null; fulfillmentType: string; hasPaymentEvidence: boolean; hasPaymentDiscrepancy: boolean; inventoryRestored: boolean };
+type Props = { orderId: string; status: string; paymentMethod: string | null; paymentState: string; totalCents: number; currency: string; reference: string | null; dueAt: string | null; fulfillmentType: string; hasPaymentEvidence: boolean; hasPaymentDiscrepancy: boolean; inventoryRestored: boolean; customerSaysPaid?: boolean };
 type PaymentAction = "verify" | "review" | "refund";
 const nextStatuses: Record<string, string[]> = { PENDING: ["CANCELLED"], PAID: ["PREPARING"], PREPARING: ["READY"], READY: ["OUT_FOR_DELIVERY", "COMPLETED"], OUT_FOR_DELIVERY: ["COMPLETED"], COMPLETED: [], CANCELLED: [] };
 function parseAmount(value: string) { if (!/^\d+(?:\.\d{1,2})?$/.test(value)) return null; const [whole, fraction = ""] = value.split("."); const cents = Number(whole) * 100 + Number(fraction.padEnd(2, "0")); return Number.isSafeInteger(cents) && cents > 0 ? cents : null; }
 export function AdminOrderActions(props: Props) {
   const router = useRouter();
-  const canVerify = props.status === "PENDING" && !props.hasPaymentDiscrepancy && !props.inventoryRestored && ["UNPAID", "REVIEW"].includes(props.paymentState) && Boolean(props.dueAt && new Date(props.dueAt).getTime() > Date.now());
+  const canVerify = props.status === "PENDING" && !props.hasPaymentDiscrepancy && !props.inventoryRestored && ["UNPAID", "REVIEW"].includes(props.paymentState) && (Boolean(props.customerSaysPaid) || Boolean(props.dueAt && new Date(props.dueAt).getTime() > Date.now()));
   const canRefund = ["VERIFIED", "REVIEW"].includes(props.paymentState) && props.hasPaymentEvidence;
   const canReview = props.paymentMethod === "VENMO";
   const [action, setAction] = useState<PaymentAction>(canVerify ? "verify" : props.status === "COMPLETED" && canRefund ? "refund" : "review");
@@ -33,7 +33,7 @@ export function AdminOrderActions(props: Props) {
     if (action === "verify" && (amountCents !== props.totalCents || currency !== props.currency)) { setMessage("The received amount and currency must exactly match the order to mark it paid. Choose ‘Record payment issue / late payment’ to save different payment evidence."); return; }
     await mutate(`/api/admin/orders/${props.orderId}/payment`, "POST", { action, amountCents, currency, providerTransactionId: String(form.get("providerTransactionId") ?? "").trim(), receivedAt: date.toISOString(), attested: form.get("attested") === "on", restock: form.get("restock") === "true", note: String(form.get("note") ?? "").trim() || undefined }, action === "verify" ? "Payment verified and order marked paid." : action === "refund" ? "External refund recorded. No money was sent by this app." : "Payment issue recorded for review. This does not mark the order paid or reopen it.");
   }
-  return <div className="mt-5 space-y-4 border-t-2 border-ink pt-4 print:hidden">
+  return <div className="mt-3 space-y-3 border-t-2 border-ink/20 pt-3 print:hidden">
     {props.paymentMethod === "VENMO" && (canVerify || canReview || canRefund) ? <details className="border-2 border-ink bg-crumb p-3"><summary className="cursor-pointer font-black uppercase tracking-wide">Reconcile Venmo payment</summary><div className="mt-3 space-y-3">
       <p className="text-sm">Check the bakery’s Venmo account independently. A customer’s message or screenshot is not proof that money arrived. These controls record checks and refunds completed in Venmo; they do not move money.</p>
       <p className="text-sm font-bold">Expected: {formatMoney(props.totalCents)} {props.currency}. Reference: <span className="break-all font-mono">{props.reference ?? "No reference recorded"}</span></p>
