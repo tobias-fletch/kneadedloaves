@@ -89,5 +89,7 @@ test("contact page has its own title, description and share tags", async () => {
   assert.equal((metadata.openGraph as { description?: string }).description, metadata.description);
   assert.equal((metadata.twitter as { title?: string }).title, "Contact | Kneaded Loaves");
   assert.equal((metadata.twitter as { description?: string }).description, metadata.description);
+  assert.match(JSON.stringify(metadata.openGraph), /opengraph-image\.png/);
+  assert.match(JSON.stringify(metadata.twitter), /twitter-image\.png/);
   assert.doesNotMatch(JSON.stringify(metadata), /mailto:/);
 });
