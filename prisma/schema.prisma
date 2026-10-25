@@ -207,8 +207,43 @@ model OrderWindow {
   manualOpen     Boolean  @default(false)
   manualClosed   Boolean  @default(false)
   orders         Order[]
+  weeklyWeek     WeeklyOrderWeek?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+}
+
+/// Recurring weekly order window (one row, id "default"). No row, or enabled = false,
+/// keeps the legacy one-off OrderWindow behavior. Days: 0 = Sunday ... 6 = Saturday.
+/// Times are "HH:MM" (24h) wall-clock in America/New_York.
+model WeeklyOrderSchedule {
+  id                 String   @id @default("default")
+  enabled            Boolean  @default(false)
+  windowName         String   @default("Weekly Bake")
+  openWeekday        Int      @default(1)
+  openTime           String   @default("09:00")
+  closeWeekday       Int      @default(6)
+  closeTime          String   @default("21:00")
+  fulfillmentWeekday Int      @default(0)
+  maxOrders          Int?
+  paused             Boolean  @default(false)
+  pauseMessage       String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+/// One scheduled week, keyed by the Eastern date of its scheduled close ("YYYY-MM-DD").
+/// Holds an optional one-week override and links the OrderWindow row that orders attach to.
+model WeeklyOrderWeek {
+  weekKey                 String       @id
+  orderWindowId           String?      @unique
+  orderWindow             OrderWindow? @relation(fields: [orderWindowId], references: [id], onDelete: SetNull)
+  overrideOpensAt         DateTime?
+  overrideClosesAt        DateTime?
+  overrideFulfillmentDate DateTime?
+  skip                    Boolean      @default(false)
+  message                 String?
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
 }
 
 model DeliveryZone {

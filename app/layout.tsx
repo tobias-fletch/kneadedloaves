@@ -13,6 +13,7 @@ import { getSession } from "@/lib/auth";
 import { getContactDetails } from "@/lib/contact";
 import { getManualPaymentConfig } from "@/lib/manual-payment-config";
 import { storefrontCheckoutAccess } from "@/lib/storefront-ordering";
+import { resolveWeekly } from "@/lib/order-window";
 import { prisma } from "@/lib/prisma";
 import { SHARE_DESCRIPTION } from "@/lib/site-metadata";
 
@@ -58,6 +59,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     getContactDetails(),
     getManualPaymentConfig().catch(() => null)
   ]);
+  // Weekly order window for the checkout drawer; null while weekly mode is off (legacy windows).
+  const weeklyWindow = (await resolveWeekly(prisma, new Date()).catch(() => null))?.resolution ?? null;
   const orderingAccess = payment ? storefrontCheckoutAccess(payment, session?.role === "ADMIN") : null;
   const checkoutReady = Boolean(orderingAccess?.checkoutReady);
   const publicSettings = {
@@ -83,7 +86,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               />
             </Link>
             <div className="ml-auto flex shrink-0 items-center gap-2">
-              <CartDrawerButton checkoutReady={checkoutReady} adminTestMode={orderingAccess?.adminTestMode ?? false} adminSetupReasons={orderingAccess?.adminSetupReasons ?? []} contactEmail={contact.email} pickupLocations={pickupLocations} />
+              <CartDrawerButton checkoutReady={checkoutReady} adminTestMode={orderingAccess?.adminTestMode ?? false} adminSetupReasons={orderingAccess?.adminSetupReasons ?? []} contactEmail={contact.email} pickupLocations={pickupLocations} weeklyWindow={weeklyWindow} />
               {session?.role === "ADMIN" ? (
                 <Link className="btn-primary px-3" href="/admin">
                   Admin

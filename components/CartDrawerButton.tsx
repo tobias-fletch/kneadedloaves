@@ -7,6 +7,8 @@ import { shouldOpenCheckoutRecovery } from "@/lib/checkout-recovery-client";
 import type { PickupLocation } from "@prisma/client";
 import { CartSummary } from "@/components/CartSummary";
 import { CheckoutForm } from "@/components/CheckoutForm";
+import { WeeklyWindowNotice } from "@/components/WeeklyWindowNotice";
+import type { WeeklyResolution } from "@/lib/weekly-window";
 
 type Cart = {
   items: { quantity: number }[];
@@ -17,13 +19,15 @@ export function CartDrawerButton({
   checkoutReady = true,
   adminTestMode = false,
   adminSetupReasons = [],
-  contactEmail = ""
+  contactEmail = "",
+  weeklyWindow = null
 }: {
   pickupLocations: PickupLocation[];
   checkoutReady?: boolean;
   adminTestMode?: boolean;
   adminSetupReasons?: string[];
   contactEmail?: string;
+  weeklyWindow?: WeeklyResolution | null;
 }) {
   const [open, setOpen] = useState(false);
   const [itemCount, setItemCount] = useState(0);
@@ -74,6 +78,7 @@ export function CartDrawerButton({
             </div>
             <div className="space-y-4 p-4">
               <CartSummary framed={false} onItemCountChange={setItemCount} />
+              {weeklyWindow ? <WeeklyWindowNotice resolution={weeklyWindow} variant="checkout" /> : null}
               <CheckoutForm checkoutReady={checkoutReady} adminTestMode={adminTestMode} adminSetupReasons={adminSetupReasons} contactEmail={contactEmail} pickupLocations={pickupLocations} framed={false} hasCartItems={itemCount > 0} />
             </div>
           </div>
