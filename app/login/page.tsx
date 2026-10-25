@@ -1,4 +1,6 @@
+import type { Metadata } from "next";
 import Link from "next/link";
+export const metadata: Metadata = { title: "Sign in | Kneaded Loaves", robots: { index: false, follow: false } };
 export default async function LoginPage({ searchParams }: { searchParams: Promise<{ error?: string }> }) {
   const { error } = await searchParams;
   return (

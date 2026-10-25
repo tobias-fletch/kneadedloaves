@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import robots from "../app/robots";
@@ -92,4 +93,21 @@ test("contact page has its own title, description and share tags", async () => {
   assert.match(JSON.stringify(metadata.openGraph), /opengraph-image\.png/);
   assert.match(JSON.stringify(metadata.twitter), /twitter-image\.png/);
   assert.doesNotMatch(JSON.stringify(metadata), /mailto:/);
+});
+
+test("account and 404 pages have their own document titles; auth pages stay noindex", () => {
+  const read = (p: string) => readFileSync(new URL(`../${p}`, import.meta.url), "utf8");
+  const expected: Record<string, string> = {
+    "app/login/page.tsx": "Sign in | Kneaded Loaves",
+    "app/register/page.tsx": "Create an account | Kneaded Loaves",
+    "app/forgot-password/page.tsx": "Forgot password | Kneaded Loaves",
+    "app/reset-password/page.tsx": "Reset password | Kneaded Loaves",
+    "app/account/page.tsx": "Account | Kneaded Loaves",
+    "app/not-found.tsx": "Page not found | Kneaded Loaves"
+  };
+  for (const [file, title] of Object.entries(expected)) {
+    const src = read(file);
+    assert.ok(src.includes(`title: "${title}"`), `${file} title`);
+    if (file !== "app/not-found.tsx") assert.ok(src.includes("index: false"), `${file} noindex`);
+  }
 });

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { AccountForm } from "@/components/AccountForm";
 import Link from "next/link";
 import { format } from "date-fns";
@@ -5,6 +6,7 @@ import { getSession } from "@/lib/auth";
 import { formatMoney } from "@/lib/money";
 import { expireUnpaidOrdersOpportunistically } from "@/lib/manual-payments";
 import { prisma } from "@/lib/prisma";
+export const metadata: Metadata = { title: "Account | Kneaded Loaves", robots: { index: false, follow: false } };
 
 export default async function AccountPage() {
   const session = await getSession();
