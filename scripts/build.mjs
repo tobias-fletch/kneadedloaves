@@ -202,6 +202,55 @@ export function migrationDatabaseUrl(databaseUrl) {
   return url.toString();
 }
 
+
+// ---- Preview database isolation (Hub #113) --------------------------------
+// Keep in sync with lib/preview-database.ts (tests compare both).
+export function normalizeDatabaseHost(host) {
+  const [endpoint, ...domain] = String(host).trim().toLowerCase().split(".");
+  return [endpoint.replace(/-pooler$/, ""), ...domain].join(".");
+}
+function databaseHostOf(value) {
+  if (!value?.trim()) return undefined;
+  try { return normalizeDatabaseHost(new URL(value.trim()).hostname) || undefined; } catch { return undefined; }
+}
+export function productionDatabaseHosts(env) {
+  const listed = String(env.PRODUCTION_DB_HOST || "").split(",").map(h => h.trim()).filter(Boolean).map(normalizeDatabaseHost);
+  const fromUrl = databaseHostOf(env.DATABASE_URL);
+  return [...new Set([...listed, ...(fromUrl ? [fromUrl] : [])])];
+}
+/** The Neon preview-branch URL for this deployment, or throw. Never a production connection. */
+export function previewDatabaseUrl(env) {
+  const candidate = [env.URL_POSTGRES_PRISMA_URL, env.URL_DATABASE_URL].map(v => v?.trim()).find(Boolean);
+  if (!candidate) throw new Error("Preview database is not configured (no Neon preview branch connection); refusing to fall back to production.");
+  const host = databaseHostOf(candidate);
+  if (!host) throw new Error("Preview database connection is invalid.");
+  const production = productionDatabaseHosts(env);
+  if (production.length === 0) throw new Error("Cannot verify the preview database is not production (set PRODUCTION_DB_HOST); refusing to connect.");
+  if (production.includes(host)) throw new Error("Preview deployment is pointed at the production database; refusing to connect.");
+  return candidate;
+}
+/** Short non-reversible fingerprint of a database host, safe for build logs. */
+export function hostFingerprint(host) {
+  return createHash("sha256").update(String(host)).digest("hex").slice(0, 10);
+}
+// Customer/personal data and secrets removed from every preview branch. The menu
+// (Category, Product, ProductImage), order windows, delivery zones, pickup
+// locations, events, templates, admin settings and non-secret config stay.
+export const PREVIEW_SCRUB_TABLES = Object.freeze([
+  "OrderItem", "PaymentEvent", "EmailJob", "Order", "CartItem", "Cart", "CustomerProfile",
+  "PasswordReset", "RateLimit", "EmailSubscriber", "SocialPostAsset", "SocialPost", "SocialPlatformAccount", "User"
+]);
+export const PREVIEW_SCRUB_SQL = `BEGIN;
+SET LOCAL statement_timeout = '60s';
+SET LOCAL lock_timeout = '10s';
+TRUNCATE ${PREVIEW_SCRUB_TABLES.map(t => `"${t}"`).join(", ")};
+DELETE FROM "AppConfig" WHERE "secret" = true;
+DO $scrub_check$ BEGIN
+  IF EXISTS (SELECT 1 FROM "Order") OR EXISTS (SELECT 1 FROM "User") OR EXISTS (SELECT 1 FROM "EmailJob") THEN RAISE EXCEPTION 'KNEADED_SCRUB_INCOMPLETE'; END IF;
+END $scrub_check$;
+COMMIT;
+`;
+
 const sleepSync = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
 export function runBuild({ root = process.cwd(), env = process.env, run = spawnSync, log = console.log, diagnostic = console.error, sleep = sleepSync } = {}) {
@@ -270,6 +319,17 @@ export function runBuild({ root = process.cwd(), env = process.env, run = spawnS
     // its own transaction), so only connection/lock timeouts are retried.
     step("Applying reviewed production migrations", prisma, ["migrate", "deploy", "--schema", "prisma/schema.prisma"], databaseEnv, undefined, false, false, MIGRATE_RETRY_DELAYS_MS);
     step("Verifying completed production migrations (read-only)", prisma, execute, databaseEnv, migrationHistorySql(plan, true), true);
+  } else if (env.VERCEL_ENV === "preview") {
+    // Previews use their own Neon branch only. Guard first (throws if the URL is
+    // missing or is production), then scrub customer data, then bring the
+    // branch schema up to this commit. Production is never touched here.
+    const previewUrl = previewDatabaseUrl(env);
+    const previewHost = databaseHostOf(previewUrl);
+    log(`Preview database: own Neon branch (host ${hostFingerprint(previewHost)}), production host(s) ${productionDatabaseHosts(env).map(hostFingerprint).join(", ")}; not production.`);
+    const previewEnv = { ...env, DATABASE_URL: migrationDatabaseUrl(previewUrl) };
+    const execute = ["db", "execute", "--schema", "prisma/schema.prisma", "--stdin"];
+    step("Scrubbing customer data from the preview branch", prisma, execute, previewEnv, PREVIEW_SCRUB_SQL, false, false, MIGRATE_RETRY_DELAYS_MS);
+    step("Applying migrations to the preview branch", prisma, ["migrate", "deploy", "--schema", "prisma/schema.prisma"], previewEnv, undefined, false, false, MIGRATE_RETRY_DELAYS_MS);
   } else {
     log("Skipping database migrations outside a production deploy.");
   }
