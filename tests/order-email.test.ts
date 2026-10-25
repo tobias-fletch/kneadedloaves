@@ -227,3 +227,9 @@ test("order email call sites keep recipients, dedupe keys, and the admin test pr
   assert.match(queue, /message\.html = job\.html/);
   assert.match(queue, /RETURNING "id", "to", "subject", "body", "html", "attempts"/);
 });
+
+test("payment label column leaves room for values on phones", () => {
+  const html = renderOrderEmail("customer-reservation", pickup()).html;
+  assert.ok(html.includes('width="112" style="width:112px;'));
+  assert.ok(!html.includes('width="148"'));
+});

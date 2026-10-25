@@ -333,7 +333,7 @@ function renderHtml(model: EmailModel) {
     const valueStyle = row.highlight
       ? `padding:8px;background-color:${CRUMB};border:2px solid ${INK};font-family:'Courier New',Courier,monospace;font-size:15px;line-height:22px;font-weight:700;color:${INK};word-break:break-all;`
       : `padding:4px 0;font-family:${BODY};font-size:16px;line-height:22px;font-weight:700;color:${INK};word-break:break-word;`;
-    return `<tr><td valign="top" width="148" style="width:148px;padding:8px 12px 8px 0;font-family:${DISPLAY};font-size:13px;line-height:18px;letter-spacing:0.6px;text-transform:uppercase;font-weight:700;color:${SAGE};">${escapeHtml(row.label)}</td><td valign="top" style="${valueStyle}">${value}</td></tr>`;
+    return `<tr><td valign="top" width="112" style="width:112px;padding:8px 10px 8px 0;font-family:${DISPLAY};font-size:13px;line-height:18px;letter-spacing:0.6px;text-transform:uppercase;font-weight:700;color:${SAGE};">${escapeHtml(row.label)}</td><td valign="top" style="${valueStyle}">${value}</td></tr>`;
   }).join("")}</table>${model.paymentNotes.length ? `<div style="margin-top:12px;">${paragraph(model.paymentNotes)}</div>` : ""}`;
   const steps = model.nextSteps.map((step, index) => `<p style="margin:${index === model.nextSteps.length - 1 ? "0" : "0 0 12px"};font-family:${BODY};font-size:16px;line-height:24px;color:${INK};">${escapeHtml(`${index + 1}. ${step}`)}</p>`).join("");
   const contact = `<p style="margin:0;font-family:${BODY};font-size:18px;line-height:26px;font-weight:700;color:${PAGE};"><a href="mailto:${BAKERY_CONTACT_EMAIL}" style="color:${PAGE};text-decoration:underline;">${BAKERY_CONTACT_EMAIL}</a></p>`;
