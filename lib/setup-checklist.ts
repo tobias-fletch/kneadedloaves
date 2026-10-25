@@ -4,6 +4,9 @@ import { paymentConfigKeys, paymentReadiness } from "@/lib/manual-payment-config
 import { prisma } from "@/lib/prisma";
 import { configEncryptionKeyStatus } from "@/lib/secrets";
 import { originFromEnv } from "@/lib/delivery-distance";
+import { adminNotifyOverride } from "@/lib/admin-notify";
+import { instagramProfileUrl } from "@/lib/contact";
+import { resolveWeekly } from "@/lib/order-window";
 
 type SetupItem = {
   id: string;
@@ -30,7 +33,8 @@ export async function getSetupChecklist() {
     activeWindows,
     futureWindows,
     pickupLocations,
-    subscribers
+    subscribers,
+    weekly
   ] = await Promise.all([
     prisma.adminSettings.findFirst(),
     prisma.product.count({ where: { active: true } }),
@@ -53,9 +57,16 @@ export async function getSetupChecklist() {
       }
     }),
     prisma.pickupLocation.count({ where: { active: true } }),
-    prisma.emailSubscriber.count({ where: { active: true } })
+    prisma.emailSubscriber.count({ where: { active: true } }),
+    // Read-only: resolveWeekly never creates or changes a window.
+    resolveWeekly(prisma, new Date()).catch(() => null)
   ]);
   const deliveryOriginConfigured = originFromEnv() !== null;
+  const weeklyScheduled = Boolean(weekly && (weekly.resolution.current || weekly.resolution.next));
+  // New-order alerts go to ADMIN_NOTIFY_EMAIL (see lib/admin-notify.ts) even while the saved admin setting is off.
+  const alertEmail = (settings?.emailNotificationsEnabled ? settings.notificationEmail?.trim() : "") || adminNotifyOverride();
+  // The footer always links Instagram (the saved handle, or the bakery account).
+  const footerInstagram = instagramProfileUrl(settings?.instagramHandle ?? "");
 
   const configRead = await readAppConfig([...paymentConfigKeys]);
   const config = configRead.values;
@@ -85,9 +96,9 @@ export async function getSetupChecklist() {
       id: "order-window",
       group: "Storefront",
       title: "Schedule an ordering window",
-      detail: "Create at least one open or upcoming order window with a fulfillment date.",
+      detail: "Create at least one open or upcoming order window, or turn on the weekly schedule.",
       href: "/admin/windows",
-      complete: activeWindows > 0 || futureWindows > 0
+      complete: activeWindows > 0 || futureWindows > 0 || weeklyScheduled
     },
     {
       id: "manual-venmo-readiness",
@@ -142,8 +153,10 @@ export async function getSetupChecklist() {
       id: "notification-settings",
       group: "Notifications",
       title: "Choose notification settings",
-      detail: "Set a notification email and decide whether admin email notifications should be enabled.",
-      complete: Boolean(settings?.notificationEmail)
+      detail: alertEmail
+        ? `Admin new-order emails are on and go to ${alertEmail}.`
+        : "Set a notification email and decide whether admin email notifications should be enabled (or set ADMIN_NOTIFY_EMAIL in Vercel).",
+      complete: Boolean(alertEmail || settings?.notificationEmail)
     },
     {
       id: "lifecycle-email-test",
@@ -157,8 +170,8 @@ export async function getSetupChecklist() {
       id: "social-handles",
       group: "Storefront",
       title: "Add social media links",
-      detail: "Add Instagram or Facebook handles in admin settings so they show in the site footer.",
-      complete: Boolean(settings?.instagramHandle || settings?.facebookHandle)
+      detail: `The site footer links Instagram: ${footerInstagram}`,
+      complete: Boolean(footerInstagram)
     },
     {
       id: "email-list",

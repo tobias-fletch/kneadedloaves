@@ -5,6 +5,8 @@ import { setupConfigKeys } from "../lib/app-config";
 import { prisma } from "../lib/prisma";
 import { destinationFingerprint, paymentConfigKeys } from "../lib/manual-payment-config";
 import { getSetupChecklist } from "../lib/setup-checklist";
+import { resetWeeklyTableCache } from "../lib/order-window";
+import { DEFAULT_WEEKLY_SETTINGS } from "../lib/weekly-window";
 import AdminEmailPage from "../app/admin/email/page";
 
 function stub(t: TestContext, target: object, key: string, implementation: (...args: unknown[]) => unknown) {
@@ -16,7 +18,7 @@ function fixture(t: TestContext) {
   const previousKey = process.env.CONFIG_ENCRYPTION_KEY;
   process.env.CONFIG_ENCRYPTION_KEY = "ab".repeat(32);
   t.after(() => { if (previousKey === undefined) delete process.env.CONFIG_ENCRYPTION_KEY; else process.env.CONFIG_ENCRYPTION_KEY = previousKey; });
-  for (const key of [...setupConfigKeys, "VENMO_VERIFIED_FINGERPRINT", "NEXT_PUBLIC_APP_URL"]) {
+  for (const key of [...setupConfigKeys, "VENMO_VERIFIED_FINGERPRINT", "NEXT_PUBLIC_APP_URL", "ADMIN_NOTIFY_EMAIL"]) {
     const before = process.env[key];
     delete process.env[key];
     t.after(() => { if (before === undefined) delete process.env[key]; else process.env[key] = before; });
@@ -34,6 +36,10 @@ function fixture(t: TestContext) {
   process.env.KL_ORIGIN_LATLNG = "10.123456,-30.654321"; // made-up test coordinates
   t.after(() => { if (previousOrigin === undefined) delete process.env.KL_ORIGIN_LATLNG; else process.env.KL_ORIGIN_LATLNG = previousOrigin; });
   for (const target of [prisma.product, prisma.productImage, prisma.orderWindow, prisma.pickupLocation, prisma.emailSubscriber]) stub(t, target, "count", async () => 1);
+  // No weekly tables unless a test turns them on.
+  resetWeeklyTableCache();
+  t.after(resetWeeklyTableCache);
+  stub(t, prisma, "$queryRaw", async () => [{ ready: false }]);
   return values;
 }
 
@@ -84,6 +90,45 @@ test("checklist rejects insecure email ports and noncanonical or local launch UR
     values.APP_URL = value;
     assert.ok((await getSetupChecklist()).incomplete.some(item => item.id === "public-url"), value);
   }
+});
+
+const incompleteIds = async () => (await getSetupChecklist()).incomplete.map(item => item.id);
+
+test("a weekly schedule counts as a scheduled ordering window without creating one", async t => {
+  fixture(t);
+  stub(t, prisma.orderWindow, "count", async () => 0);
+  assert.ok((await incompleteIds()).includes("order-window"));
+
+  let weekly = { ...DEFAULT_WEEKLY_SETTINGS, enabled: true, closeTime: "13:00" };
+  resetWeeklyTableCache();
+  stub(t, prisma, "$queryRaw", async () => [{ ready: true }]);
+  stub(t, prisma.weeklyOrderSchedule, "findUnique", async () => ({ id: "default", ...weekly }));
+  stub(t, prisma.weeklyOrderWeek, "findMany", async () => []);
+  for (const method of ["create", "update", "upsert", "createMany", "updateMany"]) {
+    stub(t, prisma.orderWindow, method, async () => { throw new Error("checklist must not write order windows"); });
+  }
+  assert.ok(!(await incompleteIds()).includes("order-window"));
+
+  weekly = { ...weekly, enabled: false };
+  assert.ok((await incompleteIds()).includes("order-window"));
+});
+
+test("notification settings are complete when admin order alerts go to ADMIN_NOTIFY_EMAIL", async t => {
+  fixture(t);
+  stub(t, prisma.adminSettings, "findFirst", async () => ({ notificationEmail: null, emailNotificationsEnabled: false, instagramHandle: null }));
+  const missing = (await getSetupChecklist()).incomplete.find(item => item.id === "notification-settings");
+  assert.ok(missing);
+
+  process.env.ADMIN_NOTIFY_EMAIL = "kneadedloaves@gmail.com";
+  assert.ok(!(await incompleteIds()).includes("notification-settings"));
+  process.env.ADMIN_NOTIFY_EMAIL = "admin@bakery.local";
+  assert.ok((await incompleteIds()).includes("notification-settings"));
+});
+
+test("the footer Instagram link completes social links; Facebook is not needed", async t => {
+  fixture(t);
+  stub(t, prisma.adminSettings, "findFirst", async () => ({ notificationEmail: "owner@example.test", instagramHandle: null, facebookHandle: null }));
+  assert.ok(!(await incompleteIds()).includes("social-handles"));
 });
 
 test("email admin renders truthful lifecycle and no legacy template panel or editor", async t => {
