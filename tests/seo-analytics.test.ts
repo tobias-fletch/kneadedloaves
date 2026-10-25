@@ -103,7 +103,8 @@ test("account and 404 pages have their own document titles; auth pages stay noin
     "app/forgot-password/page.tsx": "Forgot password | Kneaded Loaves",
     "app/reset-password/page.tsx": "Reset password | Kneaded Loaves",
     "app/account/page.tsx": "Account | Kneaded Loaves",
-    "app/not-found.tsx": "Page not found | Kneaded Loaves"
+    "app/not-found.tsx": "Page not found | Kneaded Loaves",
+    "app/orders/[id]/not-found.tsx": "Order not found | Kneaded Loaves"
   };
   for (const [file, title] of Object.entries(expected)) {
     const src = read(file);

@@ -243,7 +243,7 @@ function preheaderFor(kind: OrderEmailKind, deadline: string) {
 }
 
 function paymentNotesFor(kind: OrderEmailKind) {
-  if (kind === "customer-reservation") return ["Payment has not been confirmed.", "Put only the payment reference in the Venmo note. Do not include your address or other private details."];
+  if (kind === "customer-reservation") return ["Payment has not been confirmed."];
   if (kind === "admin-new-order") return ["Match a Venmo payment to the exact amount and the full reference before marking the order paid."];
   if (kind === "reservation-expired") return ["If you already paid, keep your Venmo receipt and email the bakery. A late payment does not schedule this order."];
   if (kind === "admin-payment-review") return ["Customer attestation is not payment proof. This order will not auto-expire: confirm the payment in Venmo and mark it paid, or cancel it."];
