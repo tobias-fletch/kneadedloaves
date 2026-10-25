@@ -19,7 +19,7 @@ export async function getStorefrontOrderingState(isAdmin = false) {
   await expireUnpaidOrders().catch(() => {
     console.error("Could not expire overdue reservations before showing ordering status.");
   });
-  const [{ openWindow, nextWindow }, payment, contact] = await Promise.all([
+  const [{ openWindow, nextWindow, weekly }, payment, contact] = await Promise.all([
     getCurrentOrderWindow(),
     getManualPaymentConfig(),
     getContactDetails()
@@ -29,6 +29,7 @@ export async function getStorefrontOrderingState(isAdmin = false) {
   return {
     openWindow,
     nextWindow,
+    weekly,
     checkoutReady: access.checkoutReady,
     publicCheckoutReady: access.publicCheckoutReady,
     adminTestMode: access.adminTestMode,

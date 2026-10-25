@@ -2,7 +2,6 @@ import { publicRedirectUrl } from "@/lib/public-origin";
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { createAutomatedDraft } from "@/lib/social";
 import { assertWindowOrder, parseMaxOrders, parseWindowTimes } from "@/lib/order-window-input";
 
 export async function POST(request: Request) {
@@ -35,7 +34,6 @@ export async function POST(request: Request) {
       manualClosed: Boolean(body.manualClosed)
     }
   });
-  await createAutomatedDraft({ title: window.name, trigger: "Order window opening soon", orderWindowId: window.id });
   if (!isJson) {
     return NextResponse.redirect(publicRedirectUrl(request, "/admin/windows"), { status: 303 });
   }

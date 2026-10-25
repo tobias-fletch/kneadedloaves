@@ -13,9 +13,6 @@ export const setupConfigFields = [
   { key: "APP_URL", label: "Public shop URL", group: "Launch", secret: false },
   { key: "JWT_SECRET", label: "Session secret", group: "Launch", secret: true },
   { key: "CHECKOUT_SMOKE_TESTED", label: "Customer checkout smoke tested", group: "Launch", secret: false, input: "checkbox", optional: true },
-  { key: "STRIPE_TEST_MODE", label: "Stripe test mode", group: "Payments", secret: false, input: "checkbox", optional: true },
-  { key: "STRIPE_SECRET_KEY", label: "Stripe secret key", group: "Payments", secret: true },
-  { key: "STRIPE_WEBHOOK_SECRET", label: "Stripe webhook secret", group: "Payments", secret: true },
   { key: "EMAIL_FROM", label: "From email", group: "Email", secret: false },
   { key: "SMTP_HOST", label: "SMTP host", group: "Email", secret: false },
   { key: "SMTP_PORT", label: "SMTP port", group: "Email", secret: false },
@@ -24,13 +21,7 @@ export const setupConfigFields = [
   { key: "EMAIL_PICKUP_SUBJECT", label: "Pickup email subject", group: "Email", secret: false, optional: true },
   { key: "EMAIL_PICKUP_BODY", label: "Pickup email body", group: "Email", secret: false, optional: true },
   { key: "EMAIL_DELIVERY_SUBJECT", label: "Delivery email subject", group: "Email", secret: false, optional: true },
-  { key: "EMAIL_DELIVERY_BODY", label: "Delivery email body", group: "Email", secret: false, optional: true },
-  { key: "INSTAGRAM_GRAPH_TOKEN", label: "Instagram Graph token", group: "Social", secret: true },
-  { key: "FACEBOOK_PAGE_TOKEN", label: "Facebook page token", group: "Social", secret: true },
-  { key: "TIKTOK_CLIENT_KEY", label: "TikTok client key", group: "Social", secret: true },
-  { key: "TIKTOK_CLIENT_SECRET", label: "TikTok client secret", group: "Social", secret: true },
-  { key: "YOUTUBE_CLIENT_ID", label: "YouTube client ID", group: "Social", secret: true },
-  { key: "YOUTUBE_CLIENT_SECRET", label: "YouTube client secret", group: "Social", secret: true }
+  { key: "EMAIL_DELIVERY_BODY", label: "Delivery email body", group: "Email", secret: false, optional: true }
 ] as const;
 
 export type SetupConfigKey = (typeof setupConfigFields)[number]["key"];

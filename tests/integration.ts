@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { changeOrderStatus } from "../lib/order-status";
 import { processEmailQueue } from "../lib/email-queue";
 const databaseUrl = process.env.DATABASE_URL || "";
+if (!["127.0.0.1", "localhost"].includes(new URL(databaseUrl).hostname)) throw new Error("Integration tests only run against a local database (127.0.0.1).");
 if (!new URL(databaseUrl).pathname.endsWith("/kneaded_loaves_test")) throw new Error("Integration tests require the dedicated kneaded_loaves_test database.");
 const prisma = new PrismaClient();
 const base = process.env.TEST_APP_URL || "http://127.0.0.1:3001";

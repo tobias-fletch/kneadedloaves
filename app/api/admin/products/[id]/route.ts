@@ -30,18 +30,6 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         : undefined
     }
   });
-  if (body.soldOut) {
-    await prisma.socialPost.create({
-      data: {
-        title: `Sold out: ${product.name}`,
-        caption: `${product.name} has sold out for this bake. Thank you for ordering early.`,
-        hashtags: ["#soldout", "#microbakery"],
-        platforms: ["INSTAGRAM"],
-        status: "DRAFT",
-        productId: product.id
-      }
-    });
-  }
   return NextResponse.json(product);
 }
 
@@ -51,6 +39,7 @@ export async function DELETE(_: Request, { params }: { params: Promise<{ id: str
   try {
     await prisma.$transaction([
       prisma.cartItem.deleteMany({ where: { productId: id } }),
+      // Legacy social posts are kept in the database; detach them so the product can still be deleted.
       prisma.socialPost.updateMany({ where: { productId: id }, data: { productId: null } }),
       prisma.orderItem.updateMany({ where: { productId: id }, data: { productId: null } }),
       prisma.product.delete({ where: { id } })

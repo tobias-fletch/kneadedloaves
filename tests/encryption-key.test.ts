@@ -113,7 +113,7 @@ test("encryption key and setup save failures stay JSON and never echo the key", 
     Reflect.set(prisma, "$queryRaw", async () => [{ ok: 1 }]);
     Reflect.set(prisma.appConfig, "findMany", async () => []);
     Reflect.set(prisma.adminSettings, "findFirst", async () => null);
-    for (const target of [prisma.product, prisma.productImage, prisma.orderWindow, prisma.deliveryZone, prisma.pickupLocation, prisma.socialPlatformAccount, prisma.emailSubscriber]) {
+    for (const target of [prisma.product, prisma.productImage, prisma.orderWindow, prisma.deliveryZone, prisma.pickupLocation, prisma.emailSubscriber]) {
       const original = Reflect.get(target, "count");
       Reflect.set(target, "count", async () => 0);
       t.after(() => { Reflect.set(target, "count", original); });

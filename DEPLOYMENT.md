@@ -56,7 +56,7 @@ If importing an older database with plaintext admin-saved secrets, set the encry
 - Confirm menu, photos, prices, stock, allergens/ingredients, contact details and pickup/delivery instructions. Create the next ordering window when launch is ready; the existing local schedule has no open window.
 - Supply and approve customer policies and any required business notices based on your operation/location; these cannot be accurately invented from source code.
 - Connect hosting/domain and SMTP, replace seed credentials, verify mobile ordering once Stripe is completed, and perform a hosted backup/restore rehearsal.
-- Social drafting remains available. Automatic publication needs each platform's accounts, app permissions and API integration; credentials alone do not enable it. Until then, publish approved copy manually. No social messages were published.
+- The Social tab and social drafting were removed (Oct 2026). Legacy social tables and settings rows stay in the database untouched.
 
 ## Integration tests
 
