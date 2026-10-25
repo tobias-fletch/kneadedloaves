@@ -24,6 +24,12 @@ export function cloudflareAnalyticsToken(value: string | null | undefined = proc
  */
 export const SEARCH_CONSOLE_VERIFICATION = "xnKInryqMG81gSlWH-MzzMaTYBqfPKOE4cm5utQ7b8s";
 
+/**
+ * Second Google Search Console verification (HTML tag method) for kneadedloaves.com.
+ * Public value, not a secret. Rendered alongside the first one; keep both.
+ */
+export const SEARCH_CONSOLE_VERIFICATION_2 = "IhNDXp7OQ2PCK8gVL70hcML-4--CL8tdTrDct3SCR-Q";
+
 /** The value rendered in <head>: NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION if set, otherwise the committed value. */
 export function siteVerificationForHead(envValue: string | null | undefined = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION) {
   return googleSiteVerification(envValue?.trim() || SEARCH_CONSOLE_VERIFICATION);
@@ -35,4 +41,15 @@ export function siteVerificationForHead(envValue: string | null | undefined = pr
 export function googleSiteVerification(value: string | null | undefined = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION) {
   const token = value?.trim() ?? "";
   return /^[A-Za-z0-9_-]{10,100}$/.test(token) ? token : null;
+}
+
+/**
+ * Every google-site-verification value rendered in <head>: the committed first value is
+ * always kept, plus the env override (if set and valid) and the second committed value.
+ */
+export function siteVerificationsForHead(envValue: string | null | undefined = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION) {
+  const values = [SEARCH_CONSOLE_VERIFICATION, siteVerificationForHead(envValue), SEARCH_CONSOLE_VERIFICATION_2]
+    .map((value) => googleSiteVerification(value))
+    .filter((value): value is string => Boolean(value));
+  return [...new Set(values)];
 }

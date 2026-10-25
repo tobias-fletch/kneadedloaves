@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import robots from "../app/robots";
 import sitemap from "../app/sitemap";
 import { CloudflareAnalytics } from "../components/CloudflareAnalytics";
-import { CF_ANALYTICS_SITE_TOKEN, SEARCH_CONSOLE_VERIFICATION, beaconTokenForPage, cloudflareAnalyticsToken, googleSiteVerification, siteVerificationForHead } from "../lib/cloudflare-analytics";
+import { CF_ANALYTICS_SITE_TOKEN, SEARCH_CONSOLE_VERIFICATION, SEARCH_CONSOLE_VERIFICATION_2, siteVerificationsForHead, beaconTokenForPage, cloudflareAnalyticsToken, googleSiteVerification, siteVerificationForHead } from "../lib/cloudflare-analytics";
 import { bakeryJsonLd } from "../lib/site";
 
 function withToken(t: test.TestContext, value: string | undefined) {
@@ -72,4 +72,24 @@ test("the kneadedloaves.com Search Console value renders in the head by default"
   assert.equal(siteVerificationForHead(undefined), SEARCH_CONSOLE_VERIFICATION);
   assert.equal(siteVerificationForHead("  "), SEARCH_CONSOLE_VERIFICATION);
   assert.equal(siteVerificationForHead("AbC-123_xyzAbC-123_xyz"), "AbC-123_xyzAbC-123_xyz");
+});
+
+test("both Search Console verification values render in the head, first one always kept", () => {
+  assert.equal(SEARCH_CONSOLE_VERIFICATION_2, "IhNDXp7OQ2PCK8gVL70hcML-4--CL8tdTrDct3SCR-Q");
+  assert.deepEqual(siteVerificationsForHead(undefined), [SEARCH_CONSOLE_VERIFICATION, SEARCH_CONSOLE_VERIFICATION_2]);
+  assert.deepEqual(siteVerificationsForHead("AbC-123_xyzAbC-123_xyz"), [SEARCH_CONSOLE_VERIFICATION, "AbC-123_xyzAbC-123_xyz", SEARCH_CONSOLE_VERIFICATION_2]);
+  assert.deepEqual(siteVerificationsForHead('x" onload="y'), [SEARCH_CONSOLE_VERIFICATION, SEARCH_CONSOLE_VERIFICATION_2]);
+});
+
+test("contact page has its own title, description and share tags", async () => {
+  const { metadata } = await import("../app/contact/page");
+  assert.equal(metadata.title, "Contact | Kneaded Loaves");
+  assert.match(String(metadata.description), /Send Kneaded Loaves a message/);
+  assert.equal((metadata.openGraph as { title?: string }).title, "Contact | Kneaded Loaves");
+  assert.equal((metadata.openGraph as { description?: string }).description, metadata.description);
+  assert.equal((metadata.twitter as { title?: string }).title, "Contact | Kneaded Loaves");
+  assert.equal((metadata.twitter as { description?: string }).description, metadata.description);
+  assert.match(JSON.stringify(metadata.openGraph), /opengraph-image\.png/);
+  assert.match(JSON.stringify(metadata.twitter), /twitter-image\.png/);
+  assert.doesNotMatch(JSON.stringify(metadata), /mailto:/);
 });

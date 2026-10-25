@@ -4,7 +4,7 @@ import Link from "next/link";
 import { UserRound } from "lucide-react";
 import { CartDrawerButton } from "@/components/CartDrawerButton";
 import { CloudflareAnalytics } from "@/components/CloudflareAnalytics";
-import { siteVerificationForHead } from "@/lib/cloudflare-analytics";
+import { siteVerificationsForHead } from "@/lib/cloudflare-analytics";
 import { ContactFooter } from "@/components/ContactFooter";
 import { InlineAdminPanel } from "@/components/InlineAdminPanel";
 import "./globals.css";
@@ -17,7 +17,7 @@ import { resolveWeekly } from "@/lib/order-window";
 import { prisma } from "@/lib/prisma";
 import { SHARE_DESCRIPTION } from "@/lib/site-metadata";
 
-const searchConsoleVerification = siteVerificationForHead();
+const searchConsoleVerifications = siteVerificationsForHead();
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://kneadedloaves.com"),
@@ -35,7 +35,7 @@ export const metadata: Metadata = {
     title: "Kneaded Loaves",
     description: SHARE_DESCRIPTION
   },
-  ...(searchConsoleVerification ? { verification: { google: searchConsoleVerification } } : {})
+  ...(searchConsoleVerifications.length ? { verification: { google: searchConsoleVerifications } } : {})
 };
 
 export const viewport: Viewport = {

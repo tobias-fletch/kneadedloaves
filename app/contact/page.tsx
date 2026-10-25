@@ -5,10 +5,29 @@ import { ContactForm } from "@/components/ContactForm";
 import { CONTACT_FORM_ID } from "@/lib/contact-form-anchor";
 import { getContactDetails, instagramProfileUrl } from "@/lib/contact";
 
+const CONTACT_TITLE = "Contact | Kneaded Loaves";
+// Setting openGraph/twitter here replaces the root ones, so the share card image is listed again.
+const SHARE_IMAGE_ALT = "Kneaded Loaves, small-batch breads and pastries baked for limited weekly order windows. kneadedloaves.com";
+const CONTACT_DESCRIPTION = "Questions about an order, special requests, pickup timing or delivery notes? Send Kneaded Loaves a message and I'll reply by email.";
+
 export const metadata: Metadata = {
-  title: "Contact | Kneaded Loaves",
-  description: "Questions about an order, special requests, pickup timing or delivery notes? Send Kneaded Loaves a message.",
-  alternates: { canonical: "/contact" }
+  title: CONTACT_TITLE,
+  description: CONTACT_DESCRIPTION,
+  alternates: { canonical: "/contact" },
+  openGraph: {
+    siteName: "Kneaded Loaves",
+    title: CONTACT_TITLE,
+    description: CONTACT_DESCRIPTION,
+    url: "/contact",
+    type: "website",
+    images: [{ url: "/opengraph-image.png", width: 1200, height: 630, alt: SHARE_IMAGE_ALT, type: "image/png" }]
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: CONTACT_TITLE,
+    description: CONTACT_DESCRIPTION,
+    images: [{ url: "/twitter-image.png", width: 1200, height: 630, alt: SHARE_IMAGE_ALT, type: "image/png" }]
+  }
 };
 
 export default async function ContactPage() {
