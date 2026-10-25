@@ -17,10 +17,10 @@ export const productSchema = z.object({
 });
 
 export const orderSchema = z.object({
-  customerEmail: z.string().trim().email().max(254),
-  customerName: z.string().trim().min(2).max(120),
-  customerPhone: z.string().max(40).optional(),
-  fulfillmentType: z.enum(["DELIVERY", "PICKUP"]),
+  customerEmail: z.string({ error: "Enter your email address." }).trim().email("Enter a valid email address.").max(254, "That email address is too long."),
+  customerName: z.string({ error: "Enter your name." }).trim().min(2, "Enter your name (at least 2 characters).").max(120, "That name is a little long."),
+  customerPhone: z.string().max(40, "That phone number is too long.").optional(),
+  fulfillmentType: z.enum(["DELIVERY", "PICKUP"], { error: "Choose pickup or delivery." }),
   deliveryZoneId: z.string().optional(),
   pickupLocationId: z.string().optional(),
   deliveryAddress: z.string().max(500).optional(),

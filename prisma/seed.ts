@@ -9,6 +9,11 @@ async function hashPassword(password: string) {
 
 async function main() {
   if (process.env.NODE_ENV === "production") throw new Error("Sample data cannot be seeded in production.");
+  // Sample data (incl. a default-password admin) only goes into a local database.
+  const seedHost = (() => { try { return new URL(process.env.DATABASE_URL || "").hostname; } catch { return ""; } })();
+  if (!["localhost", "127.0.0.1", "::1", "[::1]"].includes(seedHost) && process.env.ALLOW_SEED !== "1") {
+    throw new Error("Refusing to seed a non-local database. Use a local Postgres, or set ALLOW_SEED=1 if you are sure.");
+  }
   const admin = await prisma.user.upsert({
     where: { email: "admin@bakery.local" },
     update: {},
