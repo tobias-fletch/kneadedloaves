@@ -20,6 +20,12 @@ const nextConfig: NextConfig = {
       ...(process.env.NODE_ENV === "production" ? [{ key: "Strict-Transport-Security", value: "max-age=31536000" }] : [])
     ] }];
   },
+  // Answer /shop at the edge instead of invoking a server function just to
+  // redirect (app/shop/page.tsx stays as a fallback). Temporary so the path
+  // can become a real page later without browsers caching the redirect.
+  async redirects() {
+    return [{ source: "/shop", destination: "/#shop", permanent: false }];
+  },
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "images.unsplash.com" }
