@@ -1,4 +1,5 @@
 import { Prisma } from "@prisma/client";
+import { formatEasternDateTime } from "@/lib/format-datetime";
 import { prisma } from "@/lib/prisma";
 import { acceptsOrders } from "@/lib/order-rules";
 import { DEFAULT_WEEKLY_SETTINGS, resolveWeeklyWindow, weekKeysAround, type WeekOverride, type WeekWindow, type WeeklyResolution, type WeeklySettings } from "@/lib/weekly-window";
@@ -99,23 +100,41 @@ export async function getCurrentOrderWindow(tx: Db = prisma, now = new Date()): 
 
 export async function isOrderingOpen() { return Boolean((await getCurrentOrderWindow()).openWindow); }
 
-export type OverviewWindow = { name: string; status: "open" | "upcoming"; opensAt: Date; closesAt: Date; fulfillmentDate: Date };
+export type OverviewWindow = { id: string | null; name: string; status: "open" | "upcoming" | "closed"; opensAt: Date; closesAt: Date; fulfillmentDate: Date };
 
 /**
- * The window the admin Overview card shows: the one open now, otherwise the next one to open.
- * Uses getCurrentOrderWindow, the same source as the storefront, so it never shows a window
- * that has already closed.
+ * The window the admin Overview shows (card and order counts): the one open now, otherwise the
+ * next one to open. Uses getCurrentOrderWindow, the same source as the storefront, so it never
+ * prefers a window that has already closed. Only when nothing is open or upcoming does it fall
+ * back to the most recently closed window, marked "closed". `id` is the OrderWindow row the
+ * orders hang off; it is null for a weekly window that has not opened yet (no orders possible).
  */
 export async function getOverviewWindow(db: Db = prisma, now = new Date()): Promise<OverviewWindow | null> {
   const { openWindow, nextWindow, weekly } = await getCurrentOrderWindow(db, now);
   if (weekly) {
     const week = weekly.status === "open" ? weekly.current : weekly.next;
-    if (!week) return null;
-    const name = openWindow?.name ?? (await getWeeklySettings(db)).settings.windowName;
-    return { name, status: weekly.status === "open" ? "open" : "upcoming", opensAt: week.opensAt, closesAt: week.closesAt, fulfillmentDate: week.fulfillmentDate };
+    if (week) {
+      // The week's row, if it exists (e.g. open but full, so openWindow is undefined).
+      const link = openWindow ? null : await db.weeklyOrderWeek.findUnique({ where: { weekKey: week.weekKey }, include: { orderWindow: true } });
+      const row = openWindow ?? link?.orderWindow ?? null;
+      const name = row?.name ?? (await getWeeklySettings(db)).settings.windowName;
+      return { id: row?.id ?? null, name, status: weekly.status === "open" ? "open" : "upcoming", opensAt: week.opensAt, closesAt: week.closesAt, fulfillmentDate: week.fulfillmentDate };
+    }
+  } else {
+    const window = openWindow ?? nextWindow;
+    if (window) {
+      const row = window as Partial<{ id: string; name: string }>;
+      return { id: row.id ?? null, name: row.name ?? "Order window", status: openWindow ? "open" : "upcoming", opensAt: window.opensAt, closesAt: window.closesAt, fulfillmentDate: window.fulfillmentDate };
+    }
   }
-  const window = openWindow ?? nextWindow;
-  if (!window) return null;
-  const name = "name" in window && typeof window.name === "string" ? window.name : "Order window";
-  return { name, status: openWindow ? "open" : "upcoming", opensAt: window.opensAt, closesAt: window.closesAt, fulfillmentDate: window.fulfillmentDate };
+  const last = await db.orderWindow.findFirst({ where: { closesAt: { lt: now } }, orderBy: { closesAt: "desc" } });
+  return last ? { id: last.id, name: last.name, status: "closed", opensAt: last.opensAt, closesAt: last.closesAt, fulfillmentDate: last.fulfillmentDate } : null;
+}
+
+/** Heading for the admin Overview order counts, e.g. "Next window · Weekly Bake (opens Oct 26, 9:00 AM ET)". */
+export function overviewWindowLabel(window: OverviewWindow | null) {
+  if (!window) return "No order window yet";
+  if (window.status === "open") return `This window · ${window.name} (open now)`;
+  if (window.status === "upcoming") return `Next window · ${window.name} (opens ${formatEasternDateTime(window.opensAt)})`;
+  return `Last window (closed ${formatEasternDateTime(window.closesAt)}) · ${window.name}`;
 }
