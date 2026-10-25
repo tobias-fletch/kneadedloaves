@@ -7,7 +7,8 @@ import { getContactDetails, instagramProfileUrl } from "@/lib/contact";
 
 export const metadata: Metadata = {
   title: "Contact | Kneaded Loaves",
-  description: "Questions about an order, special requests, pickup timing or delivery notes? Send Kneaded Loaves a message."
+  description: "Questions about an order, special requests, pickup timing or delivery notes? Send Kneaded Loaves a message.",
+  alternates: { canonical: "/contact" }
 };
 
 export default async function ContactPage() {

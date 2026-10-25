@@ -3,6 +3,8 @@ import { Anton, Inter, Oswald } from "next/font/google";
 import Link from "next/link";
 import { UserRound } from "lucide-react";
 import { CartDrawerButton } from "@/components/CartDrawerButton";
+import { CloudflareAnalytics } from "@/components/CloudflareAnalytics";
+import { siteVerificationForHead } from "@/lib/cloudflare-analytics";
 import { ContactFooter } from "@/components/ContactFooter";
 import { InlineAdminPanel } from "@/components/InlineAdminPanel";
 import "./globals.css";
@@ -13,6 +15,8 @@ import { getManualPaymentConfig } from "@/lib/manual-payment-config";
 import { storefrontCheckoutAccess } from "@/lib/storefront-ordering";
 import { prisma } from "@/lib/prisma";
 import { SHARE_DESCRIPTION } from "@/lib/site-metadata";
+
+const searchConsoleVerification = siteVerificationForHead();
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://kneadedloaves.com"),
@@ -29,7 +33,8 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Kneaded Loaves",
     description: SHARE_DESCRIPTION
-  }
+  },
+  ...(searchConsoleVerification ? { verification: { google: searchConsoleVerification } } : {})
 };
 
 export const viewport: Viewport = {
@@ -94,6 +99,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {children}
         <ContactFooter contact={contact} />
         {session?.role === "ADMIN" ? <InlineAdminPanel initialSettings={publicSettings} initialAppearance={appearance} /> : null}
+        <CloudflareAnalytics />
       </body>
     </html>
   );
