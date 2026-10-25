@@ -98,3 +98,24 @@ export async function getCurrentOrderWindow(tx: Db = prisma, now = new Date()): 
 }
 
 export async function isOrderingOpen() { return Boolean((await getCurrentOrderWindow()).openWindow); }
+
+export type OverviewWindow = { name: string; status: "open" | "upcoming"; opensAt: Date; closesAt: Date; fulfillmentDate: Date };
+
+/**
+ * The window the admin Overview card shows: the one open now, otherwise the next one to open.
+ * Uses getCurrentOrderWindow, the same source as the storefront, so it never shows a window
+ * that has already closed.
+ */
+export async function getOverviewWindow(db: Db = prisma, now = new Date()): Promise<OverviewWindow | null> {
+  const { openWindow, nextWindow, weekly } = await getCurrentOrderWindow(db, now);
+  if (weekly) {
+    const week = weekly.status === "open" ? weekly.current : weekly.next;
+    if (!week) return null;
+    const name = openWindow?.name ?? (await getWeeklySettings(db)).settings.windowName;
+    return { name, status: weekly.status === "open" ? "open" : "upcoming", opensAt: week.opensAt, closesAt: week.closesAt, fulfillmentDate: week.fulfillmentDate };
+  }
+  const window = openWindow ?? nextWindow;
+  if (!window) return null;
+  const name = "name" in window && typeof window.name === "string" ? window.name : "Order window";
+  return { name, status: openWindow ? "open" : "upcoming", opensAt: window.opensAt, closesAt: window.closesAt, fulfillmentDate: window.fulfillmentDate };
+}

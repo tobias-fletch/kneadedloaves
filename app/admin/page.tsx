@@ -2,17 +2,20 @@ import Link from "next/link";
 import { formatEasternDateTime, formatEasternMonthDay } from "@/lib/format-datetime";
 import { formatMoney } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
+import { getOverviewWindow } from "@/lib/order-window";
 import { getSetupChecklist } from "@/lib/setup-checklist";
 import { summarizeOrders } from "@/lib/admin-metrics";
 import { SetupChecklistClient } from "@/components/SetupChecklistClient";
 import { orderStatusBadge } from "@/lib/admin-status";
 
 export default async function AdminPage() {
-  const [recent, products, windows, setup] = await Promise.all([
+  const [recent, products, windows, setup, upcoming] = await Promise.all([
     prisma.order.findMany({ orderBy: { createdAt: "desc" }, take: 6 }).catch(() => []),
     prisma.product.count({ where: { active: true } }).catch(() => 0),
-    prisma.orderWindow.findMany({ orderBy: { opensAt: "desc" }, take: 3 }).catch(() => []),
-    getSetupChecklist().catch(() => ({ completeCount: 0, totalCount: 0, incomplete: [] }))
+    prisma.orderWindow.findMany({ orderBy: { opensAt: "desc" }, take: 1 }).catch(() => []),
+    getSetupChecklist().catch(() => ({ completeCount: 0, totalCount: 0, incomplete: [] })),
+    // Same "open now, else next to open" logic as the storefront, never a closed window.
+    getOverviewWindow().catch(() => null)
   ]);
   const current = windows[0];
   const windowOrders = current
@@ -63,14 +66,13 @@ export default async function AdminPage() {
             <h2 className="text-lg font-black">Order windows</h2>
             <Link className="text-xs font-black uppercase tracking-wide underline" href="/admin/windows">Manage</Link>
           </div>
-          <ul className="mt-3 space-y-2">
-            {windows.map((window) => (
-              <li className="border-2 border-ink bg-crumb p-3 text-sm" key={window.id}>
-                <p className="font-black">{window.name}</p>
-                <p className="mt-0.5 text-ink/80">Closes {formatEasternDateTime(window.closesAt)} · fulfills {formatEasternMonthDay(window.fulfillmentDate)}</p>
-              </li>
-            ))}
-          </ul>
+          {upcoming ? (
+            <div className="mt-3 border-2 border-ink bg-crumb p-3 text-sm" data-testid="overview-window">
+              <p className="font-black">{upcoming.name}</p>
+              <p className="mt-0.5 text-ink/80">{upcoming.status === "open" ? "Open now" : `Opens ${formatEasternDateTime(upcoming.opensAt)}`}</p>
+              <p className="mt-0.5 text-ink/80">Closes {formatEasternDateTime(upcoming.closesAt)} · fulfills {formatEasternMonthDay(upcoming.fulfillmentDate)}</p>
+            </div>
+          ) : <p className="mt-3 text-sm">No open or upcoming order window.</p>}
           <p className="mt-3 text-xs text-ink/70">{products} products on the menu · <Link className="underline" href="/admin/products">edit menu</Link></p>
         </div>
       </section>
