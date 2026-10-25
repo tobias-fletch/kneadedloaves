@@ -1,0 +1,11 @@
+{
+  "_comment": "Real public menu (from kneadedloaves.com, Oct 24 2026) seeded into empty preview databases only. No customer data. Hub #113.",
+  "category": { "name": "Bakery", "slug": "bakery" },
+  "products": [
+    { "slug": "artisan-bread", "name": "Artisan Bread", "priceCents": 1200, "description": "Artisan bread.", "ingredients": [], "image": "/menu-art/artisan-bread.jpg" },
+    { "slug": "bagels-6-pack", "name": "Bagels (6 pack)", "priceCents": 800, "description": "Six-pack of bagels.", "ingredients": [], "image": "/menu-art/bagels.jpg" },
+    { "slug": "cookies-6-pack", "name": "Cookies (6 pack)", "priceCents": 600, "description": "Six-pack of cookies.", "ingredients": [], "image": "/menu-art/cookies.jpg" },
+    { "slug": "herbal-focaccia", "name": "Herbal Focaccia", "priceCents": 1050, "description": "Our signature fluffy focaccia, seasoned and baked with fresh, seasonal herbs.", "ingredients": [], "image": "/menu-art/herb-focaccia.jpg" },
+    { "slug": "plain-focaccia", "name": "Plain Focaccia", "priceCents": 1000, "description": "Fluffy, bubbly, delicious, focaccia bread.", "ingredients": ["Bread flour", "water", "salt", "yeast"], "image": "/menu-art/focaccia.jpg" }
+  ]
+}
