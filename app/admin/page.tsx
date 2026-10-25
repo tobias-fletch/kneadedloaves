@@ -2,28 +2,29 @@ import Link from "next/link";
 import { formatEasternDateTime, formatEasternMonthDay } from "@/lib/format-datetime";
 import { formatMoney } from "@/lib/money";
 import { prisma } from "@/lib/prisma";
+import { getOverviewWindow, overviewWindowLabel } from "@/lib/order-window";
 import { getSetupChecklist } from "@/lib/setup-checklist";
 import { summarizeOrders } from "@/lib/admin-metrics";
 import { SetupChecklistClient } from "@/components/SetupChecklistClient";
 import { orderStatusBadge } from "@/lib/admin-status";
 
 export default async function AdminPage() {
-  const [recent, products, windows, setup] = await Promise.all([
+  const [recent, products, setup, overview] = await Promise.all([
     prisma.order.findMany({ orderBy: { createdAt: "desc" }, take: 6 }).catch(() => []),
     prisma.product.count({ where: { active: true } }).catch(() => 0),
-    prisma.orderWindow.findMany({ orderBy: { opensAt: "desc" }, take: 3 }).catch(() => []),
-    getSetupChecklist().catch(() => ({ completeCount: 0, totalCount: 0, incomplete: [] }))
+    getSetupChecklist().catch(() => ({ completeCount: 0, totalCount: 0, incomplete: [] })),
+    // Same "open now, else next to open" logic as the storefront; the card and the counts use it.
+    getOverviewWindow().catch(() => null)
   ]);
-  const current = windows[0];
-  const windowOrders = current
-    ? await prisma.order.findMany({ where: { orderWindowId: current.id }, select: { status: true, paymentState: true, totalCents: true, paymentReviewRequestedAt: true } }).catch(() => [])
+  const windowOrders = overview?.id
+    ? await prisma.order.findMany({ where: { orderWindowId: overview.id }, select: { status: true, paymentState: true, totalCents: true, paymentReviewRequestedAt: true } }).catch(() => [])
     : [];
   const summary = summarizeOrders(windowOrders);
 
   return (
     <div className="space-y-5">
-      <section aria-label={current ? `This window: ${current.name}` : "This window"} className="space-y-2">
-        <p className="text-xs font-black uppercase tracking-widest text-ink/70">{current ? `This window · ${current.name}` : "No order window yet"}</p>
+      <section aria-label={overviewWindowLabel(overview)} className="space-y-2">
+        <p className="text-xs font-black uppercase tracking-widest text-ink/70">{overviewWindowLabel(overview)}</p>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <Metric label="Orders" value={String(summary.orders)} />
           <Metric label="Verified revenue" value={formatMoney(summary.verifiedCents)} />
@@ -63,14 +64,13 @@ export default async function AdminPage() {
             <h2 className="text-lg font-black">Order windows</h2>
             <Link className="text-xs font-black uppercase tracking-wide underline" href="/admin/windows">Manage</Link>
           </div>
-          <ul className="mt-3 space-y-2">
-            {windows.map((window) => (
-              <li className="border-2 border-ink bg-crumb p-3 text-sm" key={window.id}>
-                <p className="font-black">{window.name}</p>
-                <p className="mt-0.5 text-ink/80">Closes {formatEasternDateTime(window.closesAt)} · fulfills {formatEasternMonthDay(window.fulfillmentDate)}</p>
-              </li>
-            ))}
-          </ul>
+          {overview ? (
+            <div className="mt-3 border-2 border-ink bg-crumb p-3 text-sm" data-testid="overview-window">
+              <p className="font-black">{overview.name}</p>
+              <p className="mt-0.5 text-ink/80">{overview.status === "open" ? "Open now" : overview.status === "upcoming" ? `Opens ${formatEasternDateTime(overview.opensAt)}` : "Closed · no open or upcoming window"}</p>
+              <p className="mt-0.5 text-ink/80">Closes {formatEasternDateTime(overview.closesAt)} · fulfills {formatEasternMonthDay(overview.fulfillmentDate)}</p>
+            </div>
+          ) : <p className="mt-3 text-sm">No open or overview order window.</p>}
           <p className="mt-3 text-xs text-ink/70">{products} products on the menu · <Link className="underline" href="/admin/products">edit menu</Link></p>
         </div>
       </section>
