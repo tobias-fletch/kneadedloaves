@@ -15,6 +15,7 @@ import { getManualPaymentConfig } from "@/lib/manual-payment-config";
 import { storefrontCheckoutAccess } from "@/lib/storefront-ordering";
 import { resolveWeekly } from "@/lib/order-window";
 import { prisma } from "@/lib/prisma";
+import { Analytics } from "@vercel/analytics/next";
 import { SHARE_DESCRIPTION } from "@/lib/site-metadata";
 
 const searchConsoleVerifications = siteVerificationsForHead();
@@ -103,6 +104,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <ContactFooter contact={contact} />
         {session?.role === "ADMIN" ? <InlineAdminPanel initialSettings={publicSettings} initialAppearance={appearance} /> : null}
         <CloudflareAnalytics />
+        <Analytics />
       </body>
     </html>
   );
