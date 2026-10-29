@@ -23,8 +23,16 @@ const nextConfig: NextConfig = {
   // Answer /shop at the edge instead of invoking a server function just to
   // redirect (app/shop/page.tsx stays as a fallback). Temporary so the path
   // can become a real page later without browsers caching the redirect.
+  // /menu and /order have no page of their own; the menu with its Add to Cart
+  // buttons is the home page's #shop section. Permanent (308): these are
+  // aliases for that section, not future pages. Next's default trailing-slash
+  // handling sends /menu/ and /order/ to the bare path first.
   async redirects() {
-    return [{ source: "/shop", destination: "/#shop", permanent: false }];
+    return [
+      { source: "/shop", destination: "/#shop", permanent: false },
+      { source: "/menu", destination: "/#shop", permanent: true },
+      { source: "/order", destination: "/#shop", permanent: true }
+    ];
   },
   images: {
     remotePatterns: [
