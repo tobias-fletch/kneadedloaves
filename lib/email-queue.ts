@@ -2,6 +2,7 @@ import { Prisma } from "@prisma/client";
 import nodemailer from "nodemailer";
 import { prisma } from "@/lib/prisma";
 import { getAppConfigValues } from "@/lib/app-config";
+import { EMAIL_REPLY_TO, PreviewRecipientBlockedError, RESEND_SMTP_HOST, SENDING_DOMAIN, assertPreviewRecipients, mailProvider } from "@/lib/mail-provider";
 
 export async function queueEmail(input: { dedupeKey: string; to: string; subject: string; body: string; html?: string | null }, tx: Prisma.TransactionClient = prisma) {
   return tx.emailJob.upsert({ where: { dedupeKey: input.dedupeKey }, update: {}, create: input });
@@ -28,6 +29,9 @@ export function mailerSettings(config: { SMTP_HOST: string; SMTP_PORT: string; S
   if (host === "smtp.gmail.com" && fromAddress.toLowerCase() !== config.SMTP_USER.trim().toLowerCase()) {
     throw new Error("Gmail requires the EMAIL_FROM address to match SMTP_USER.");
   }
+  if (host === RESEND_SMTP_HOST && !fromAddress.toLowerCase().endsWith(`@${SENDING_DOMAIN}`)) {
+    throw new Error(`Resend requires the EMAIL_FROM address to be on ${SENDING_DOMAIN}.`);
+  }
   const secure = port === 465;
   const password = host === "smtp.gmail.com" ? config.SMTP_PASSWORD.replace(/\s+/g, "") : config.SMTP_PASSWORD;
   if (!password) throw new Error("SMTP configuration is incomplete.");
@@ -47,10 +51,24 @@ export function mailerSettings(config: { SMTP_HOST: string; SMTP_PORT: string; S
   };
 }
 
-export async function smtpTransport() {
+export type MailMessage = { from: string; to: string; subject: string; text: string; html?: string; replyTo?: string; messageId?: string };
+
+/**
+ * The configured sender. `sendMail` refuses (PreviewRecipientBlockedError) on any non-production
+ * deployment when a recipient is off the preview allowlist, before anything leaves the server.
+ */
+export async function smtpTransport(createTransport: (options: ReturnType<typeof mailerSettings>["options"]) => { sendMail: (message: MailMessage) => Promise<unknown> } = nodemailer.createTransport) {
   const config = await getAppConfigValues(["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM"]);
   const settings = mailerSettings(config);
-  return { from: settings.from, transport: nodemailer.createTransport(settings.options) };
+  const transport = createTransport(settings.options);
+  return {
+    from: settings.from,
+    provider: mailProvider(),
+    sendMail: async (message: MailMessage) => {
+      assertPreviewRecipients(message);
+      return transport.sendMail(message);
+    }
+  };
 }
 
 export async function verifySmtpConnection(config: { SMTP_HOST: string; SMTP_PORT: string; SMTP_USER: string; SMTP_PASSWORD: string; EMAIL_FROM: string }, createTransport: (options: object) => { verify: () => Promise<unknown> } = nodemailer.createTransport) {
@@ -60,9 +78,10 @@ export async function verifySmtpConnection(config: { SMTP_HOST: string; SMTP_POR
 }
 
 export function emailDeliveryMessage(job: { id: string; to: string; subject: string; body: string; html?: string | null }, from: string) {
-  const message: { from: string; to: string; subject: string; text: string; html?: string; messageId: string } = {
+  const message: { from: string; to: string; replyTo: string; subject: string; text: string; html?: string; messageId: string } = {
     from,
     to: job.to,
+    replyTo: EMAIL_REPLY_TO,
     subject: job.subject,
     text: job.body,
     messageId: `<${job.id}@${messageIdDomain(from)}>`
@@ -96,10 +115,15 @@ export async function processEmailQueue(options?: { dedupeSuffix?: string }) {
     RETURNING "id", "to", "subject", "body", "html", "attempts"`;
   for (const job of jobs) {
     try {
-      const { from, transport } = await smtpTransport();
-      await transport.sendMail(emailDeliveryMessage(job, from));
+      const { from, sendMail } = await smtpTransport();
+      await sendMail(emailDeliveryMessage(job, from));
       await prisma.emailJob.update({ where: { id: job.id }, data: { status: "SENT", sentAt: new Date(), lastError: null, lockedUntil: null } });
-    } catch {
+    } catch (error) {
+      if (error instanceof PreviewRecipientBlockedError) {
+        // Preview copy of the queue: never retried, never sent to a real customer.
+        await prisma.emailJob.update({ where: { id: job.id }, data: { status: "FAILED", lastError: error.message, lockedUntil: null } });
+        continue;
+      }
       await prisma.emailJob.update({ where: { id: job.id }, data: { status: job.attempts >= 5 ? "FAILED" : "PENDING", lastError: "Delivery failed. Verify SMTP settings and provider logs.", availableAt: new Date(Date.now() + 60000 * 2 ** job.attempts), lockedUntil: null } });
     }
   }

@@ -18,6 +18,7 @@ import {
   type OutgoingMail
 } from "../lib/contact-message";
 import { contactClientIp, handleContactPost, submittedTooFast, type ContactRouteDeps } from "../lib/contact-route";
+import { assertPreviewRecipients } from "../lib/mail-provider";
 
 const submittedAt = new Date("2026-10-23T22:11:00Z"); // 6:11 PM EDT
 const message = { name: "Ada Lovelace", email: "ada@example.org", message: "Do you have rye loaves this Sunday?\nThanks!", website: "" };
@@ -104,7 +105,9 @@ test("dry-run guard: sends only in production with CONTACT_LIVE_SEND=true", () =
   assert.equal(contactDeliveryMode({ VERCEL_ENV: "production" }), "dry-run");
   assert.equal(contactDeliveryMode({ VERCEL_ENV: "production", CONTACT_LIVE_SEND: "false" }), "dry-run");
   assert.equal(contactDeliveryMode({ VERCEL_ENV: "production", CONTACT_LIVE_SEND: "1" }), "dry-run");
-  assert.equal(contactDeliveryMode({ VERCEL_ENV: "preview", CONTACT_LIVE_SEND: "true" }), "dry-run");
+  assert.equal(contactDeliveryMode({ VERCEL_ENV: "preview", CONTACT_LIVE_SEND: "true" }), "live");
+  assert.equal(contactDeliveryMode({ VERCEL_ENV: "preview" }), "dry-run");
+  assert.equal(contactDeliveryMode({ VERCEL_ENV: "preview", CONTACT_LIVE_SEND: "false" }), "dry-run");
   assert.equal(contactDeliveryMode({ VERCEL_ENV: "development", CONTACT_LIVE_SEND: "true" }), "dry-run");
   assert.equal(contactDeliveryMode({ CONTACT_LIVE_SEND: "true" }), "dry-run");
   assert.equal(contactDeliveryMode({}), "dry-run");
@@ -192,6 +195,53 @@ test("route: production without CONTACT_LIVE_SEND=true is a dry run", async () =
   assert.ok(logs.some((line) => /DRY RUN/.test(line)));
 });
 
+test("route: sends as Kneaded Loaves <noreply@kneadedloaves.com> with Reply-To the bakery inbox on the confirmation", async () => {
+  const resend = mockTransport();
+  const { deps } = routeDeps({ transport: async () => ({ from: "Kneaded Loaves <noreply@kneadedloaves.com>", sendMail: resend.sendMail }) });
+  const response = await handleContactPost(request(message), deps);
+  assert.equal(response.status, 200);
+  assert.equal(resend.sent.length, 2);
+  const [notification, confirmation] = resend.sent;
+  assert.equal(notification.from, "Kneaded Loaves <noreply@kneadedloaves.com>");
+  assert.equal(notification.to, "kneadedloaves@gmail.com");
+  assert.equal(notification.replyTo, "ada@example.org");
+  assert.equal(confirmation.from, "Kneaded Loaves <noreply@kneadedloaves.com>");
+  assert.equal(confirmation.to, "ada@example.org");
+  assert.equal(confirmation.replyTo, "kneadedloaves@gmail.com");
+  for (const mail of resend.sent) assert.doesNotMatch(`${mail.from} ${mail.subject} ${mail.text}`, /talespyre/i);
+});
+
+test("route: preview with CONTACT_LIVE_SEND=true sends the owner notification and the allowlist refuses other recipients", async () => {
+  const sent: OutgoingMail[] = [];
+  const env = { VERCEL_ENV: "preview", CONTACT_LIVE_SEND: "true" };
+  const { deps } = routeDeps({
+    env,
+    transport: async () => ({
+      from: "Kneaded Loaves <noreply@kneadedloaves.com>",
+      sendMail: async (mail: OutgoingMail) => { assertPreviewRecipients(mail, env); sent.push(mail); return { messageId: "mock" }; }
+    })
+  });
+  const response = await handleContactPost(request(message), deps);
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { ok: true, confirmationSent: false });
+  assert.deepEqual(sent.map((mail) => mail.to), ["kneadedloaves@gmail.com"]);
+});
+
+test("route: preview confirmation to an allowlisted tester is sent", async () => {
+  const sent: OutgoingMail[] = [];
+  const env = { VERCEL_ENV: "preview", CONTACT_LIVE_SEND: "true" };
+  const { deps } = routeDeps({
+    env,
+    transport: async () => ({
+      from: "Kneaded Loaves <noreply@kneadedloaves.com>",
+      sendMail: async (mail: OutgoingMail) => { assertPreviewRecipients(mail, env); sent.push(mail); return { messageId: "mock" }; }
+    })
+  });
+  const response = await handleContactPost(request({ ...message, email: "tobias.fletch@gmail.com" }), deps);
+  assert.equal(response.status, 200);
+  assert.deepEqual(sent.map((mail) => mail.to), ["kneadedloaves@gmail.com", "tobias.fletch@gmail.com"]);
+});
+
 test("route: refuses to send when SMTP is set up for a different mailbox", async () => {
   const other = mockTransport();
   const { deps } = routeDeps({ transport: async () => ({ from: "Someone <someone@example.org>", sendMail: other.sendMail }) });
@@ -201,10 +251,10 @@ test("route: refuses to send when SMTP is set up for a different mailbox", async
   assert.doesNotMatch(JSON.stringify(await response.json()), /mailto:/);
 });
 
-test("route: preview deployments log instead of sending and never build a transport", async () => {
+test("route: preview deployments without CONTACT_LIVE_SEND=true log instead of sending and never build a transport", async () => {
   let transportBuilt = false;
   const { deps, transport, logs } = routeDeps({
-    env: { VERCEL_ENV: "preview", CONTACT_LIVE_SEND: "true" },
+    env: { VERCEL_ENV: "preview" },
     transport: async () => { transportBuilt = true; throw new Error("must not be called"); }
   });
   const response = await handleContactPost(request(message), deps);

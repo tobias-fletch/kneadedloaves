@@ -18,7 +18,7 @@ export async function POST() {
   } catch (error) {
     if (navigationError(error)) throw error;
     console.error("SMTP verify failed.", error instanceof Error ? error.name : "Error");
-    const safe = error instanceof Error && /SMTP configuration is incomplete|EMAIL_FROM|Gmail requires the EMAIL_FROM|authenticated TLS SMTP port/.test(error.message)
+    const safe = error instanceof Error && /SMTP configuration is incomplete|EMAIL_FROM|Gmail requires the EMAIL_FROM|Resend requires the EMAIL_FROM|authenticated TLS SMTP port/.test(error.message)
       ? error.message
       : "SMTP connection could not be verified. No message was sent.";
     return NextResponse.json({ error: safe }, { status: 400 });

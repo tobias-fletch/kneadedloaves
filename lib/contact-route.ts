@@ -10,6 +10,7 @@ import {
   type OutgoingMail
 } from "@/lib/contact-message";
 import { mailboxAddress, smtpTransport } from "@/lib/email-queue";
+import { allowedSenderMailbox } from "@/lib/mail-provider";
 import { readJson } from "@/lib/request";
 import { contactRateLimit } from "@/lib/contact-rate-limit";
 
@@ -26,8 +27,8 @@ export type ContactRouteDeps = {
 };
 
 async function defaultTransport() {
-  const { from, transport } = await smtpTransport();
-  return { from, sendMail: (mail: OutgoingMail) => transport.sendMail(mail) };
+  const { from, sendMail } = await smtpTransport();
+  return { from, sendMail: (mail: OutgoingMail) => sendMail(mail) };
 }
 
 /**
@@ -81,24 +82,27 @@ export async function handleContactPost(request: Request, deps: ContactRouteDeps
 
   const mode = contactDeliveryMode(env);
   let sendMail: ((mail: OutgoingMail) => Promise<unknown>) | undefined;
+  let from: string | undefined;
   if (mode === "live") {
     try {
       const transport = await (deps.transport ?? defaultTransport)();
-      // Contact mail must go out from the bakery's own Gmail account, never another mailbox.
-      if (mailboxAddress(transport.from).toLowerCase() !== CONTACT_MAILBOX) throw new Error("Sender mailbox mismatch.");
+      // Contact mail goes out only as the bakery: noreply@kneadedloaves.com (Resend) or the Gmail fallback account.
+      if (!allowedSenderMailbox(mailboxAddress(transport.from))) throw new Error("Sender mailbox mismatch.");
       sendMail = transport.sendMail;
+      from = transport.from;
     } catch {
-      console.error(`[contact] SMTP is not configured to send from ${CONTACT_MAILBOX}; cannot send.`);
+      console.error(`[contact] Email is not configured to send as ${CONTACT_MAILBOX} or a kneadedloaves.com address; cannot send.`);
       return NextResponse.json({ error: `Our email is having a moment. ${EMAIL_FALLBACK}` }, { status: 503 });
     }
   } else {
-    (deps.log ?? console.info)(`[contact] Dry-run mode (VERCEL_ENV=${env.VERCEL_ENV ?? "unset"}); emails are logged, not sent. Live sending needs VERCEL_ENV=production and CONTACT_LIVE_SEND=true.`);
+    (deps.log ?? console.info)(`[contact] Dry-run mode (VERCEL_ENV=${env.VERCEL_ENV ?? "unset"}); emails are logged, not sent. Live sending needs CONTACT_LIVE_SEND=true on production (or on a preview, which only emails the test allowlist).`);
   }
 
   const claim = deps.claim ?? claimDailyConfirmation;
   const result = await deliverContactMessage(parsed.data, {
     mode,
     notifyTo: CONTACT_MAILBOX,
+    from,
     sendMail,
     claimConfirmation: (email, at) => claim(email, at, mode),
     log: deps.log,
