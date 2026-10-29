@@ -155,6 +155,29 @@ test("a failed owner notification is reported and no confirmation is sent", asyn
   assert.equal(claims, 0);
 });
 
+test("a failed Resend send of the owner notification logs only the error code, reply code and command", async () => {
+  const logged: string[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => { logged.push(args.map(String).join(" ")); };
+  try {
+    const resendError = Object.assign(new Error("Invalid login: 535 Authentication credentials invalid for kneadedloaves@gmail.com"), {
+      code: "EAUTH", responseCode: 535, command: "AUTH PLAIN", response: "535 Authentication credentials invalid", pass: "re_fake_key_value"
+    });
+    const result = await deliverContactMessage(message, {
+      mode: "live", notifyTo: "owner@kneadedloaves.com",
+      sendMail: async () => { throw resendError; },
+      claimConfirmation: async () => true, now: submittedAt
+    });
+    assert.deepEqual(result, { ok: false, reason: "notification-failed" });
+  } finally {
+    console.error = original;
+  }
+  assert.deepEqual(logged, ["[contact] Owner notification: Resend send failed. code=EAUTH responseCode=535 command=AUTH PLAIN"]);
+  for (const leak of ["kneadedloaves@gmail.com", "owner@kneadedloaves.com", "ada@example.org", "re_fake_key_value", "rye loaves", "Authentication credentials"]) {
+    assert.ok(!logged[0].includes(leak), leak);
+  }
+});
+
 test("works with a real nodemailer JSON transport (no network)", async () => {
   const transport = nodemailer.createTransport({ jsonTransport: true });
   const raw: string[] = [];
