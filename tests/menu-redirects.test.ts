@@ -16,3 +16,10 @@ test("/menu and /order redirect permanently to the home-page menu section", asyn
 test("the home page still renders the #shop anchor the redirects target", () => {
   assert.match(readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8"), /id="shop"/);
 });
+
+test("in-page anchors clear the sticky header", () => {
+  const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
+  const rule = /#shop,\s*#events,\s*#contact-form \{\s*scroll-margin-top: calc\(88px \+ min\(56\.08px, \(100vw - 2rem\) \* 56\.08 \/ 370\) \+ 12px\);/;
+  assert.match(css, rule);
+  assert.match(css, /@media \(min-width: 640px\) \{[^]*?#shop,\s*#events,\s*#contact-form \{\s*scroll-margin-top: 96\.08px;/);
+});

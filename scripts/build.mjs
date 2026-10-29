@@ -205,6 +205,12 @@ export function migrationDatabaseUrl(databaseUrl) {
 
 // ---- Preview database isolation (Hub #113) --------------------------------
 // Keep in sync with lib/preview-database.ts (tests compare both).
+// Production is identified by a committed, non-secret fingerprint of its host,
+// so Preview needs no production settings (no PRODUCTION_DB_HOST, no production
+// credentials). PRODUCTION_DB_HOST and DATABASE_URL, when present, are still
+// added to the refusal list. A random fingerprint match only makes a preview
+// refuse to connect; it can never let one through to production.
+export const PRODUCTION_DB_HOST_FINGERPRINTS = Object.freeze(["e542c8ef81"]);
 export function normalizeDatabaseHost(host) {
   const [endpoint, ...domain] = String(host).trim().toLowerCase().split(".");
   return [endpoint.replace(/-pooler$/, ""), ...domain].join(".");
@@ -218,20 +224,24 @@ export function productionDatabaseHosts(env) {
   const fromUrl = databaseHostOf(env.DATABASE_URL);
   return [...new Set([...listed, ...(fromUrl ? [fromUrl] : [])])];
 }
+/** Short non-reversible fingerprint of a database host, safe for build logs. */
+export function hostFingerprint(host) {
+  return createHash("sha256").update(String(host)).digest("hex").slice(0, 10);
+}
+/** Fingerprints a preview must never connect to: the committed list plus any production host in env. */
+export function productionHostFingerprints(env, known = PRODUCTION_DB_HOST_FINGERPRINTS) {
+  return [...new Set([...known.map(f => String(f).trim().toLowerCase()).filter(Boolean), ...productionDatabaseHosts(env).map(hostFingerprint)])];
+}
 /** The Neon preview-branch URL for this deployment, or throw. Never a production connection. */
-export function previewDatabaseUrl(env) {
+export function previewDatabaseUrl(env, known = PRODUCTION_DB_HOST_FINGERPRINTS) {
   const candidate = [env.URL_POSTGRES_PRISMA_URL, env.URL_DATABASE_URL].map(v => v?.trim()).find(Boolean);
   if (!candidate) throw new Error("Preview database is not configured (no Neon preview branch connection); refusing to fall back to production.");
   const host = databaseHostOf(candidate);
   if (!host) throw new Error("Preview database connection is invalid.");
-  const production = productionDatabaseHosts(env);
-  if (production.length === 0) throw new Error("Cannot verify the preview database is not production (set PRODUCTION_DB_HOST); refusing to connect.");
-  if (production.includes(host)) throw new Error("Preview deployment is pointed at the production database; refusing to connect.");
+  const production = productionHostFingerprints(env, known);
+  if (production.length === 0) throw new Error("Cannot verify the preview database is not production (no production host fingerprint); refusing to connect.");
+  if (production.includes(hostFingerprint(host))) throw new Error("Preview deployment is pointed at the production database; refusing to connect.");
   return candidate;
-}
-/** Short non-reversible fingerprint of a database host, safe for build logs. */
-export function hostFingerprint(host) {
-  return createHash("sha256").update(String(host)).digest("hex").slice(0, 10);
 }
 // Customer/personal data and secrets removed from every preview branch. The menu
 // (Category, Product, ProductImage), order windows, delivery zones, pickup
@@ -279,7 +289,7 @@ COMMIT;
 
 const sleepSync = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
 
-export function runBuild({ root = process.cwd(), env = process.env, run = spawnSync, log = console.log, diagnostic = console.error, sleep = sleepSync } = {}) {
+export function runBuild({ root = process.cwd(), env = process.env, run = spawnSync, log = console.log, diagnostic = console.error, sleep = sleepSync, productionFingerprints = PRODUCTION_DB_HOST_FINGERPRINTS } = {}) {
   const prisma = path.join(root, "node_modules", "prisma", "build", "index.js");
   const next = path.join(root, "node_modules", "next", "dist", "bin", "next");
   // Database steps (historyCheck or a dedicated databaseEnv) never forward output.
@@ -337,6 +347,8 @@ export function runBuild({ root = process.cwd(), env = process.env, run = spawnS
     let parsed;
     try { parsed = new URL(databaseUrl); } catch { throw new Error("The production database connection is invalid; no database command was run."); }
     if (!["postgres:", "postgresql:"].includes(parsed.protocol)) throw new Error("The production database connection must use PostgreSQL; no database command was run.");
+    const productionFingerprint = hostFingerprint(normalizeDatabaseHost(parsed.hostname));
+    log(`Production database host fingerprint ${productionFingerprint} (${productionFingerprints.includes(productionFingerprint) ? "matches" : "NOT in"} the committed preview guard list).`);
     const databaseEnv = { ...env, DATABASE_URL: migrationDatabaseUrl(databaseUrl) };
     const plan = readMigrationPlan(root);
     const execute = ["db", "execute", "--schema", "prisma/schema.prisma", "--stdin"];
@@ -349,9 +361,9 @@ export function runBuild({ root = process.cwd(), env = process.env, run = spawnS
     // Previews use their own Neon branch only. Guard first (throws if the URL is
     // missing or is production), then scrub customer data, then bring the
     // branch schema up to this commit. Production is never touched here.
-    const previewUrl = previewDatabaseUrl(env);
+    const previewUrl = previewDatabaseUrl(env, productionFingerprints);
     const previewHost = databaseHostOf(previewUrl);
-    log(`Preview database: own Neon branch (host ${hostFingerprint(previewHost)}), production host(s) ${productionDatabaseHosts(env).map(hostFingerprint).join(", ")}; not production.`);
+    log(`Preview database: own Neon branch (host ${hostFingerprint(previewHost)}), production host(s) ${productionHostFingerprints(env, productionFingerprints).join(", ")}; not production.`);
     const previewEnv = { ...env, DATABASE_URL: migrationDatabaseUrl(previewUrl) };
     const execute = ["db", "execute", "--schema", "prisma/schema.prisma", "--stdin"];
     step("Applying migrations to the preview branch", prisma, ["migrate", "deploy", "--schema", "prisma/schema.prisma"], previewEnv, undefined, false, false, MIGRATE_RETRY_DELAYS_MS);
