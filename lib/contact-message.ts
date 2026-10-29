@@ -54,14 +54,16 @@ export function easternDateKey(value: Date) {
 }
 
 /**
- * Real email leaves only from the production deployment AND only when
- * CONTACT_LIVE_SEND=true is set there. Everything else (preview, development,
- * local, production with the flag unset or any other value) is a dry run that
+ * Real email leaves only when CONTACT_LIVE_SEND=true is set on the production
+ * deployment or on a preview deployment. Previews then email only the test
+ * allowlist (lib/mail-provider.ts): the owner notification goes to the bakery
+ * inbox and a confirmation to anyone else is refused. Everything else
+ * (development, local, or the flag unset or any other value) is a dry run that
  * logs one masked line and sends nothing.
  */
 export function contactDeliveryMode(env: Record<string, string | undefined> = process.env): "live" | "dry-run" {
   const flag = env.CONTACT_LIVE_SEND?.trim().toLowerCase();
-  return env.VERCEL_ENV === "production" && flag === "true" ? "live" : "dry-run";
+  return (env.VERCEL_ENV === "production" || env.VERCEL_ENV === "preview") && flag === "true" ? "live" : "dry-run";
 }
 
 export function buildOwnerNotification(input: ContactMessage, submittedAt: Date, options: { from: string; to: string }): OutgoingMail {
@@ -134,6 +136,8 @@ export async function claimDailyConfirmation(
 export type ContactDeliveryDeps = {
   mode: "live" | "dry-run";
   notifyTo: string;
+  /** The configured sender (e.g. Kneaded Loaves <noreply@kneadedloaves.com>). Defaults to the bakery Gmail mailbox. */
+  from?: string;
   sendMail?: (mail: OutgoingMail) => Promise<unknown>;
   claimConfirmation: (email: string, now: Date) => Promise<boolean>;
   log?: (message: string) => void;
@@ -147,7 +151,7 @@ export async function deliverContactMessage(input: ContactMessage, deps: Contact
   const now = deps.now ?? new Date();
   const log = deps.log ?? ((message: string) => console.info(message));
   const mailbox = CONTACT_MAILBOX;
-  const from = `${CONTACT_SENDER_NAME} <${mailbox}>`;
+  const from = deps.from?.trim() || `${CONTACT_SENDER_NAME} <${mailbox}>`;
   const dryRun = deps.mode !== "live";
   const send = async (kind: string, mail: OutgoingMail) => {
     if (dryRun) {
