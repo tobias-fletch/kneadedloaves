@@ -20,21 +20,36 @@ const swaps = [
   { slug: "plain-focaccia", name: "Plain Focaccia", old: "/menu-art/focaccia.jpg" }
 ];
 
-/** RIFF chunk names and pixel size of a lossy WebP. */
+/** RIFF chunk names, pixel size and alpha of a WebP (lossy, lossless or extended). */
 function webpInfo(file: string) {
   const data = readFileSync(file);
   assert.equal(data.toString("latin1", 0, 4), "RIFF");
   assert.equal(data.toString("latin1", 8, 12), "WEBP");
   const chunks: string[] = [];
+  let width = 0;
+  let height = 0;
+  let alpha = false;
   for (let at = 12; at + 8 <= data.length; ) {
+    const name = data.toString("latin1", at, at + 4);
     const size = data.readUInt32LE(at + 4);
-    chunks.push(data.toString("latin1", at, at + 4));
+    const body = at + 8;
+    chunks.push(name);
+    if (name === "VP8X") {
+      alpha = (data[body] & 0x10) !== 0;
+      width = data.readUIntLE(body + 4, 3) + 1;
+      height = data.readUIntLE(body + 7, 3) + 1;
+    } else if (name === "VP8 " && !width) {
+      width = data.readUInt16LE(body + 6) & 0x3fff;
+      height = data.readUInt16LE(body + 8) & 0x3fff;
+    } else if (name === "VP8L" && !width) {
+      const bits = data.readUInt32LE(body + 1);
+      width = (bits & 0x3fff) + 1;
+      height = ((bits >> 14) & 0x3fff) + 1;
+      alpha = alpha || ((bits >> 28) & 1) === 1;
+    }
     at += 8 + size + (size & 1);
   }
-  const vp8 = data.indexOf("VP8 ", 12, "latin1");
-  const width = data.readUInt16LE(vp8 + 14) & 0x3fff;
-  const height = data.readUInt16LE(vp8 + 16) & 0x3fff;
-  return { chunks, width, height };
+  return { chunks, width, height, alpha };
 }
 
 test("every image an admin can pick exists in public/", () => {
@@ -52,12 +67,24 @@ test("photos live at new paths and are shown as photos; illustrations keep their
   for (const art of MENU_ILLUSTRATIONS) assert.notEqual(getMenuArtwork(art.value), undefined, art.value);
 });
 
-test("photos are 1800x1200 WebP with no EXIF, XMP or ICC metadata", () => {
+test("photos are WebP with no EXIF, XMP or ICC metadata, at the size the menu card expects", () => {
   for (const photo of MENU_PHOTOS) {
     const info = webpInfo(publicFile(photo.value));
-    assert.deepEqual(info.chunks, ["VP8 "], photo.value);
-    assert.deepEqual([info.width, info.height], [1800, 1200], photo.value);
+    for (const chunk of info.chunks) assert.ok(["VP8 ", "VP8L", "VP8X", "ALPH"].includes(chunk), `${photo.value}: unexpected ${chunk} chunk`);
+    assert.deepEqual([info.width, info.height], [photo.width, photo.height], photo.value);
+    if (photo.fit === "cover") {
+      assert.deepEqual([photo.width, photo.height], [1800, 1200], photo.value);
+    } else {
+      // Cut-outs keep their transparency and are big enough for a 2x phone screen.
+      assert.ok(info.alpha, `${photo.value} should keep its transparent background`);
+      assert.ok(Math.max(photo.width, photo.height) >= 800, photo.value);
+    }
   }
+});
+
+test("cookies and bagels are single-item cut-outs shown whole; focaccia and bread are cropped photos", () => {
+  const fit = Object.fromEntries(MENU_PHOTOS.map(photo => [photo.value.replace(/^.*\/|\.webp$/g, ""), photo.fit]));
+  assert.deepEqual(fit, { "plain-focaccia": "cover", "artisan-bread": "cover", "bagels-6-pack": "contain", "cookies-6-pack": "contain" });
 });
 
 test("preview menu keeps the real names and prices and uses the photos; Herbal Focaccia keeps its illustration", () => {
@@ -94,7 +121,8 @@ test("go-live and rollback SQL swap exactly these four images and nothing else",
 });
 
 test("stored alt text describes a picked photo, otherwise the product name", () => {
-  assert.equal(menuImageAlt("/menu-art/photos/bagels-6-pack.webp", "Bagels (6 pack)"), "Six seeded everything bagels on a wooden board");
-  assert.equal(menuImageAlt("/menu-art/photos/bagels-6-pack.webp?v=2", "Bagels (6 pack)"), "Six seeded everything bagels on a wooden board");
+  const bagel = MENU_PHOTOS.find(photo => photo.value === "/menu-art/photos/bagels-6-pack.webp")!.alt;
+  assert.equal(menuImageAlt("/menu-art/photos/bagels-6-pack.webp", "Bagels (6 pack)"), bagel);
+  assert.equal(menuImageAlt("/menu-art/photos/bagels-6-pack.webp?v=2", "Bagels (6 pack)"), bagel);
   for (const url of ["/menu-art/bagels.jpg", "https://example.com/x.jpg", "", null, undefined]) assert.equal(menuImageAlt(url, "Bagels (6 pack)"), "Bagels (6 pack)");
 });
