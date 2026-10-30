@@ -94,7 +94,7 @@ The `URL_*` variables exist only in the Production environment. Preview deployme
 - Work on a feature branch, open a PR into `main`. Vercel builds a preview for each PR.
 - `scripts/build.mjs` decides what a build may do:
   - **Production build** (`VERCEL_ENV=production`): runs a read-only migration-history checksum guard, then `prisma migrate deploy` (retrying the transient Prisma errors P1001/P1002/P1017), then `next build`.
-  - **Preview build:** never migrates production. It uses only the preview Neon branch, scrubs customer data from that branch, and refuses to run if the database looks like production (section 7).
+  - **Preview build:** never migrates production. It uses only the preview Neon branch, runs `prisma migrate deploy` on that branch, scrubs customer data from it, and refuses to run if the database looks like production (section 7).
 - **Vercel Cron** (`vercel.json`, daily because of the Hobby plan): `/api/cron/payments-expire` at 16:00 UTC and `/api/cron/email-worker` at 17:00 UTC. They send `Authorization: Bearer $CRON_SECRET`.
 - **kl-cron (to confirm, not in this repo):** a separate Cloudflare Worker calls the health check every 5 minutes and the payments-expire and email-worker routes every 15 minutes with the same `CRON_SECRET`. The Vercel crons stay as a backup.
 
@@ -110,7 +110,7 @@ The `URL_*` variables exist only in the Production environment. Preview deployme
 - **Preview database guard (PR #40, merged):** `lib/preview-database.ts` and `scripts/build.mjs`.
   - Previews read only `URL_POSTGRES_PRISMA_URL` / `URL_DATABASE_URL`, which point at the preview's own Neon branch.
   - The guard refuses any host whose fingerprint (first 10 hex characters of the sha256 of the hostname) is in the committed `PRODUCTION_DB_HOST_FINGERPRINTS` list, and also refuses the hosts in `PRODUCTION_DB_HOST` and `DATABASE_URL`. Only fingerprints are committed, never hostnames.
-  - Preview builds scrub customer data from the preview branch and never migrate.
+  - Preview builds do migrate, but only their own preview branch: `prisma migrate deploy` runs against the preview Neon branch, then customer data is scrubbed from it and the menu is seeded if the branch has none. Production is never migrated by a preview build.
 - **Neon preview cleanup:** `.github/workflows/neon-preview-branch-cleanup.yml` deletes the `preview/<branch>` Neon branch when a PR closes or a branch is deleted, and prunes weekly. It uses the `NEON_API_KEY` GitHub secret.
 - **Menu photos (2026-10-29):** see "Menu photos" below.
 - **Backups and restore:** `npm run backup`; restore into a new database, never over production (DEPLOYMENT.md).
@@ -145,6 +145,7 @@ The `URL_*` variables exist only in the Production environment. Preview deployme
 - Every message is From **Kneaded Loaves <noreply@kneadedloaves.com>** with Reply-To **kneadedloaves@gmail.com**. Contact-form notifications go TO kneadedloaves@gmail.com. A From outside kneadedloaves.com is refused.
 - If `RESEND_API_KEY` is not set, nothing is sent: queued jobs retry and then show as failed, checkout stays closed (readiness needs email), and Admin > Setup shows "Not configured". There is no Gmail fallback any more.
 - The key is set only in Vercel, never in Admin > Setup. Setup shows a "Configured / Not configured" Resend status and never shows the key.
+- Customer emails use the built-in wording in `lib/order-email.ts`. The legacy `EMAIL_PICKUP_SUBJECT`, `EMAIL_PICKUP_BODY`, `EMAIL_DELIVERY_SUBJECT` and `EMAIL_DELIVERY_BODY` settings are not read by anything, so Admin > Setup hides them (`legacyUnusedSetupKeys` in `lib/app-config.ts`) and never shows them as missing. Saved values stay in the database untouched.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` and `EMAIL_FROM` are no longer read anywhere. Old values saved in the database (`AppConfig` rows) are left in place but ignored; no migration removes them.
 - Non-production deployments (Vercel preview/development) only email `tobias.fletch@gmail.com` and `kneadedloaves@gmail.com`.
 - Contact form live sending is controlled by `CONTACT_LIVE_SEND`; the public contact address is `CONTACT_EMAIL` or the bakery default, never a sender setting.
@@ -184,3 +185,4 @@ The `URL_*` variables exist only in the Production environment. Preview deployme
 - 2026-10-29: guide created
 - 2026-10-29: email is Resend only. Removed the Gmail SMTP fallback, the `SMTP_*` and `EMAIL_FROM` settings, the Setup "Check SMTP connection" button and its route; Setup now shows a Resend status. Old SMTP values in the database are ignored, not deleted.
 - 2026-10-29: real menu photos for Plain Focaccia, Artisan Bread, Bagels (6 pack) and Cookies (6 pack) in `public/menu-art/photos/` (Herbal Focaccia keeps its illustration). Focaccia and bread are cropped photos; bagels and cookies are single-item cut-outs shown whole on cream. All use responsive sizes; admins can pick them in Admin > Products. Previews show them; the live site needs the go-live database step in section 7 ("Menu photos").
+- 2026-10-30: Admin > Setup no longer shows the four unused legacy Pickup/Delivery Email Subject and Body fields, so they are never flagged "Missing" / "Not configured yet". The Email section still shows the Resend status. No change to email sending, data, schema or other settings; the keys stay valid and any saved values are kept. Also corrected section 7: preview builds do migrate (their own preview Neon branch only, never production).

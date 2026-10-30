@@ -21,6 +21,17 @@ export const setupConfigFields = [
 
 export type SetupConfigKey = (typeof setupConfigFields)[number]["key"];
 
+/**
+ * Legacy pickup/delivery email templates. Nothing reads them: customer emails use the
+ * built-in text in lib/order-email.ts. They stay valid keys (so saved rows and the save
+ * API are untouched) but are hidden from /admin/setup so they are never shown as missing.
+ */
+export const legacyUnusedSetupKeys: readonly SetupConfigKey[] = ["EMAIL_PICKUP_SUBJECT", "EMAIL_PICKUP_BODY", "EMAIL_DELIVERY_SUBJECT", "EMAIL_DELIVERY_BODY"];
+
+export function isLegacyUnusedSetupKey(key: string) {
+  return (legacyUnusedSetupKeys as readonly string[]).includes(key);
+}
+
 export const setupConfigKeys = setupConfigFields.map((field) => field.key);
 
 export function isSetupConfigKey(key: string): key is SetupConfigKey {
@@ -68,7 +79,7 @@ export async function getSetupConfigSummary() {
   const savedByKey = new Map(saved.map((item) => [item.key, item]));
 
   const encryptionKeyValid = configEncryptionKeyStatus().valid;
-  return setupConfigFields.map((field) => {
+  return setupConfigFields.filter((field) => !isLegacyUnusedSetupKey(field.key)).map((field) => {
     const savedItem = savedByKey.get(field.key);
     const envValue = process.env[field.key]?.trim() || "";
     const savedValue = savedItem?.value?.trim() || "";
