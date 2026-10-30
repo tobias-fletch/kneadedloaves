@@ -2,8 +2,9 @@ import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
-import { ResendStatus } from "../components/SetupSettingsForm";
-import { setupConfigKeys } from "../lib/app-config";
+import { AppRouterContext, type AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime";
+import { ResendStatus, SetupSettingsForm } from "../components/SetupSettingsForm";
+import { getSetupConfigSummary, legacyUnusedSetupKeys, setupConfigKeys } from "../lib/app-config";
 import { prisma } from "../lib/prisma";
 import { destinationFingerprint, paymentConfigKeys } from "../lib/manual-payment-config";
 import { getSetupChecklist } from "../lib/setup-checklist";
@@ -85,6 +86,30 @@ test("destination changes invalidate readiness and ignored legacy templates cann
   const result = await getSetupChecklist();
   assert.match(result.incomplete.find(item => item.id === "manual-venmo-readiness")!.detail, /verify the current receiving destination/);
   assert.match(result.incomplete.find(item => item.id === "lifecycle-email-test")!.detail, /Legacy pickup and delivery templates are not used/);
+});
+
+test("legacy pickup/delivery email templates are never flagged as missing on /admin/setup", async t => {
+  const legacy = ["EMAIL_PICKUP_SUBJECT", "EMAIL_PICKUP_BODY", "EMAIL_DELIVERY_SUBJECT", "EMAIL_DELIVERY_BODY"];
+  assert.deepEqual([...legacyUnusedSetupKeys].sort(), [...legacy].sort());
+  const router = { back() {}, forward() {}, refresh() {}, push() {}, replace() {}, prefetch() {} } as AppRouterInstance;
+  const values = fixture(t);
+  // Unset (the reported case) and saved legacy values both leave the fields hidden and unflagged.
+  for (const saved of [false, true]) {
+    for (const key of legacy) { if (saved) values[key] = "Legacy"; else delete values[key]; }
+    const summary = await getSetupConfigSummary();
+    for (const key of legacy) assert.ok(!summary.some(field => field.key === key), `${key} hidden (saved=${saved})`);
+    assert.ok(summary.some(field => field.key === "VENMO_HANDLE"), "other setup fields still shown");
+    const checklist = JSON.stringify(await getSetupChecklist());
+    for (const key of legacy) assert.doesNotMatch(checklist, new RegExp(key));
+    const html = renderToStaticMarkup(createElement(AppRouterContext.Provider, { value: router }, createElement(SetupSettingsForm, { fields: summary, emailStatus: { resendConfigured: true } })));
+    assert.doesNotMatch(html, /Pickup email|Delivery email|EMAIL_PICKUP|EMAIL_DELIVERY/);
+    assert.doesNotMatch(html, />Missing</);
+    assert.match(html, /<h2[^>]*>Email<\/h2>/);
+    assert.match(html, /data-testid="resend-status"/);
+    assert.match(html, /built-in wording/);
+  }
+  // The keys stay valid setup keys, so saved rows and the save API are unchanged.
+  for (const key of legacy) assert.ok((setupConfigKeys as readonly string[]).includes(key), key);
 });
 
 test("checklist requires RESEND_API_KEY for email and rejects noncanonical or local launch URLs", async t => {
