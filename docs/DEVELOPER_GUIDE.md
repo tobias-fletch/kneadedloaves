@@ -31,6 +31,7 @@ components/     React components
 lib/            shared logic: cart rules, order windows, delivery zones, payments, mail, auth,
                 preview-database guard (lib/preview-database.ts)
 prisma/         schema.prisma, migrations/, seed.ts, preview-menu.json
+public/menu-art/  menu illustrations (*.jpg) and real menu photos (photos/*.webp)
 scripts/        build.mjs (build + DB guards), email worker, payment expiry, admin setup,
                 encrypt-config, backup
 tests/          node:test unit tests and integration tests
@@ -111,8 +112,26 @@ The `URL_*` variables exist only in the Production environment. Preview deployme
   - The guard refuses any host whose fingerprint (first 10 hex characters of the sha256 of the hostname) is in the committed `PRODUCTION_DB_HOST_FINGERPRINTS` list, and also refuses the hosts in `PRODUCTION_DB_HOST` and `DATABASE_URL`. Only fingerprints are committed, never hostnames.
   - Preview builds scrub customer data from the preview branch and never migrate.
 - **Neon preview cleanup:** `.github/workflows/neon-preview-branch-cleanup.yml` deletes the `preview/<branch>` Neon branch when a PR closes or a branch is deleted, and prunes weekly. It uses the `NEON_API_KEY` GitHub secret.
+- **Menu photos (2026-10-29):** see "Menu photos" below.
 - **Backups and restore:** `npm run backup`; restore into a new database, never over production (DEPLOYMENT.md).
 - `prisma/seed.ts` refuses a non-local database unless `ALLOW_SEED=1`. Do not seed production.
+
+### Menu photos
+
+- **Where they live:** real product photos are in `public/menu-art/photos/<slug>.webp`, with EXIF/GPS and all other metadata stripped. Today: `plain-focaccia` and `artisan-bread` are normal 1800x1200 (3:2) photos. `bagels-6-pack` and `cookies-6-pack` are cut-outs: a single item with the background removed, saved as transparent WebP. Herbal Focaccia has no photo yet and keeps its illustration.
+- The old illustrations stay at `public/menu-art/*.jpg`. `lib/menu-artwork.ts` zooms those **exact paths** (0.72x to 1.9x on a cream background), so never overwrite them with a photo. Add a new photo at a new path instead.
+- `components/MenuProductImage.tsx` reads each photo's `fit` from `lib/menu-images.ts`:
+  - `cover` photos, and any custom upload, are cropped to fill the card.
+  - `contain` cut-outs are shown whole and centred on the card's cream colour (`bg-page`), never cropped.
+  - `next/image` sends phones a resized WebP/AVIF copy (its `sizes` matches the 1/2/3-column grid), and transparency is kept. So only the one WebP per item is committed, with no -900 or JPG copies.
+  - If a JPG of a cut-out is ever needed, flatten it onto the cream `#e9e4d3`, never black.
+- The list admins pick from (Admin > Products, both the add form and the edit form) is `lib/menu-images.ts`, together with each photo's alt text. Picking a photo stores that alt text; anything else stores the product name.
+- **The live menu reads images from the database** (`ProductImage.url`, shown as `product.images[0]`), not from these files or `prisma/preview-menu.json`. Adding a photo file changes nothing on the live site until the database points at it.
+- **Previews:** each preview has its own Neon branch. If that branch has no products, the build seeds `prisma/preview-menu.json`. If it already has the menu (copied from the live data), the build applies `scripts/menu-photos-2026-10-29.sql` to that preview branch only, after the preview guard has refused production. Either way the preview shows the photos.
+- **Go-live step (production database, by Tobias or with his okay, after the code is live in production):**
+  `npx prisma db execute --schema prisma/schema.prisma --file scripts/menu-photos-2026-10-29.sql`
+  It is idempotent: it changes a `ProductImage` row only if its product matches by slug or exact name **and** the row still uses the old illustration. It sets `url` to the photo and `alt` to the photo's description. Alternative without SQL: in `/admin` > Products, edit each of the four items and pick its "(photo)" image.
+- **Rollback:** `npx prisma db execute --schema prisma/schema.prisma --file scripts/menu-photos-2026-10-29.rollback.sql` puts the four items back on `/menu-art/<name>.jpg` with the product name as alt text (the values on the live site on 2026-10-29).
 
 ## 8. Hosting and DNS
 
@@ -164,3 +183,4 @@ The `URL_*` variables exist only in the Production environment. Preview deployme
 
 - 2026-10-29: guide created
 - 2026-10-29: email is Resend only. Removed the Gmail SMTP fallback, the `SMTP_*` and `EMAIL_FROM` settings, the Setup "Check SMTP connection" button and its route; Setup now shows a Resend status. Old SMTP values in the database are ignored, not deleted.
+- 2026-10-29: real menu photos for Plain Focaccia, Artisan Bread, Bagels (6 pack) and Cookies (6 pack) in `public/menu-art/photos/` (Herbal Focaccia keeps its illustration). Focaccia and bread are cropped photos; bagels and cookies are single-item cut-outs shown whole on cream. All use responsive sizes; admins can pick them in Admin > Products. Previews show them; the live site needs the go-live database step in section 7 ("Menu photos").

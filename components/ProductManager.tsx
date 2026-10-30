@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { MENU_IMAGE_OPTIONS } from "@/lib/menu-images";
 import { formatMoney } from "@/lib/money";
 
 type CategoryOption = {
@@ -39,12 +40,8 @@ export function ProductManager({
   const [editArt, setEditArt] = useState("");
 
   const menuArt = [
-    { value: "", label: "Keep current / choose pixel art" },
-    { value: "/menu-art/focaccia.jpg", label: "🍞 Focaccia" },
-    { value: "/menu-art/herb-focaccia.jpg", label: "🌿 Herb Focaccia" },
-    { value: "/menu-art/artisan-bread.jpg", label: "🥖 Artisan Bread" },
-    { value: "/menu-art/bagels.jpg", label: "🥯 Bagels" },
-    { value: "/menu-art/cookies.jpg", label: "🍪 Cookies" },
+    { value: "", label: "Keep current / choose a photo or illustration" },
+    ...MENU_IMAGE_OPTIONS.map(({ value, label }) => ({ value, label }))
   ];
 
   async function save(productId: string, formData: FormData) {
