@@ -67,7 +67,7 @@ test("preview build with no production settings in env: runs on the branch; refu
   const opts = { root: path.resolve(__dirname, ".."), log: (m: string) => logs.push(m), diagnostic: () => {}, sleep: () => {}, productionFingerprints: [prodFingerprint],
     run: (_c: string, args: string[], o: { env: Record<string, string> }) => { calls.push({ args, env: o.env }); return { status: 0, stdout: "", stderr: "" }; } };
   build.runBuild({ ...opts, env: { VERCEL_ENV: "preview", URL_POSTGRES_PRISMA_URL: branch } });
-  assert.equal(calls.length, 5); assert.match(calls[0].env.DATABASE_URL, /ep-branch-456\./);
+  assert.equal(calls.length, 6); assert.match(calls[0].env.DATABASE_URL, /ep-branch-456\./);
   const out = logs.join("\n"); assert.match(out, new RegExp(`own Neon branch .*production host\\(s\\) ${prodFingerprint}; not production`));
   for (const leak of ["secret", "ep-branch", "ep-prod", "neon.tech"]) assert.ok(!out.includes(leak), leak);
   calls.length = 0;
@@ -91,14 +91,17 @@ test("preview build: guard, scrub, migrate on the branch only; never the product
   const calls: { args: string[]; env: Record<string, string>; input?: string }[] = []; const logs: string[] = [];
   build.runBuild({ root: path.resolve(__dirname, ".."), env: { VERCEL_ENV: "preview", DATABASE_URL: prod, URL_POSTGRES_PRISMA_URL: branch }, log: (m: string) => logs.push(m), diagnostic: () => {}, sleep: () => {},
     run: (_c: string, args: string[], o: { env: Record<string, string>; input?: string }) => { calls.push({ args, env: o.env, input: o.input }); return { status: 0, stdout: "", stderr: "" }; } });
-  assert.deepEqual(calls.map(c => c.args.slice(1, 3)), [["migrate", "deploy"], ["db", "execute"], ["db", "execute"], ["generate", "--schema"], ["build"]]);
-  for (const c of calls.slice(0, 3)) { assert.match(c.env.DATABASE_URL, /ep-branch-456\./); assert.ok(!c.env.DATABASE_URL.includes("ep-prod-123")); }
+  assert.deepEqual(calls.map(c => c.args.slice(1, 3)), [["migrate", "deploy"], ["db", "execute"], ["db", "execute"], ["db", "execute"], ["generate", "--schema"], ["build"]]);
+  for (const c of calls.slice(0, 4)) { assert.match(c.env.DATABASE_URL, /ep-branch-456\./); assert.ok(!c.env.DATABASE_URL.includes("ep-prod-123")); }
   const scrub = calls[1].input ?? "";
   for (const t of ["OrderItem", "Order", "User", "EmailJob", "CustomerProfile", "PaymentEvent"]) assert.ok(scrub.includes(`'${t}'`), t);
   assert.doesNotMatch(scrub, /'Product'|'Category'|'ProductImage'|DROP /);
   const menu = calls[2].input ?? "";
   assert.match(menu, /IF NOT EXISTS \(SELECT 1 FROM "Product"\)/);
   for (const name of ["Artisan Bread", "Bagels (6 pack)", "Cookies (6 pack)", "Herbal Focaccia", "Plain Focaccia"]) assert.ok(menu.includes(`'${name}'`), name);
+  const photos = calls[3].input ?? "";
+  assert.match(photos, /UPDATE "ProductImage"/);
+  assert.doesNotMatch(photos, /DELETE |DROP |TRUNCATE |INSERT /);
   const out = logs.join("\n"); for (const leak of ["secret", "ep-branch", "ep-prod"]) assert.ok(!out.includes(leak), leak);
   assert.match(out, /own Neon branch/);
 });

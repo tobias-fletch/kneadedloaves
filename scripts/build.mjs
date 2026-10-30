@@ -274,7 +274,7 @@ export function previewMenuSql(root) {
   const menu = JSON.parse(readFileSync(path.join(root, "prisma", "preview-menu.json"), "utf8"));
   const inserts = menu.products.map(p => `    INSERT INTO "Product" ("id", "name", "slug", "description", "priceCents", "allergens", "ingredients", "categoryId", "updatedAt")
       VALUES (${sqlText(`preview-${p.slug}`)}, ${sqlText(p.name)}, ${sqlText(p.slug)}, ${sqlText(p.description)}, ${Number.parseInt(p.priceCents, 10)}, ARRAY[]::text[], ${sqlTextArray(p.ingredients)}, 'preview-category', now());
-    INSERT INTO "ProductImage" ("id", "productId", "url", "alt") VALUES (${sqlText(`preview-img-${p.slug}`)}, ${sqlText(`preview-${p.slug}`)}, ${sqlText(p.image)}, ${sqlText(p.name)});`).join("\n");
+    INSERT INTO "ProductImage" ("id", "productId", "url", "alt") VALUES (${sqlText(`preview-img-${p.slug}`)}, ${sqlText(`preview-${p.slug}`)}, ${sqlText(p.image)}, ${sqlText(p.imageAlt || p.name)});`).join("\n");
   return `BEGIN;
 DO $menu$
 BEGIN
@@ -285,6 +285,17 @@ ${inserts}
 END $menu$;
 COMMIT;
 `;
+}
+
+/**
+ * The committed go-live menu-photo update, applied to the preview branch only.
+ * A preview branch copied from the live menu keeps its products (the seed above
+ * is skipped), so without this the preview would still show the illustrations.
+ * The script is idempotent and changes only rows that still use an illustration.
+ */
+export const PREVIEW_MENU_PHOTO_SCRIPT = "scripts/menu-photos-2026-10-29.sql";
+export function previewMenuPhotoSql(root) {
+  return readFileSync(path.join(root, PREVIEW_MENU_PHOTO_SCRIPT), "utf8");
 }
 
 const sleepSync = ms => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
@@ -369,6 +380,7 @@ export function runBuild({ root = process.cwd(), env = process.env, run = spawnS
     step("Applying migrations to the preview branch", prisma, ["migrate", "deploy", "--schema", "prisma/schema.prisma"], previewEnv, undefined, false, false, MIGRATE_RETRY_DELAYS_MS);
     step("Removing customer data from the preview branch", prisma, execute, previewEnv, PREVIEW_SCRUB_SQL, false, false, MIGRATE_RETRY_DELAYS_MS);
     step("Seeding the real menu into the preview branch (only if it has none)", prisma, execute, previewEnv, previewMenuSql(root), false, false, MIGRATE_RETRY_DELAYS_MS);
+    step("Applying the menu photo update to the preview branch", prisma, execute, previewEnv, previewMenuPhotoSql(root), false, false, MIGRATE_RETRY_DELAYS_MS);
   } else {
     log("Skipping database migrations outside a production deploy.");
   }

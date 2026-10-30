@@ -19,3 +19,9 @@ test("custom and unknown images retain the existing image treatment", () => {
     assert.equal(getMenuArtwork(src), undefined);
   }
 });
+
+test("real menu photos are not zoomed or cream-backed", () => {
+  for (const slug of ["plain-focaccia", "cookies-6-pack", "bagels-6-pack", "artisan-bread"]) {
+    assert.equal(getMenuArtwork(`/menu-art/photos/${slug}.webp`), undefined);
+  }
+});

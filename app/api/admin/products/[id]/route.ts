@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
+import { menuImageAlt } from "@/lib/menu-images";
 import { prisma } from "@/lib/prisma";
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -23,8 +24,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
         ? {
             upsert: {
               where: { id: body.imageId || "new-image" },
-              update: { url: body.imageUrl, alt: body.name },
-              create: { url: body.imageUrl, alt: body.name }
+              update: { url: body.imageUrl, alt: menuImageAlt(body.imageUrl, body.name) },
+              create: { url: body.imageUrl, alt: menuImageAlt(body.imageUrl, body.name) }
             }
           }
         : undefined

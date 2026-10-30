@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
+import { menuImageAlt } from "@/lib/menu-images";
 import { prisma } from "@/lib/prisma";
 import { productSchema } from "@/lib/validation";
 
@@ -12,7 +13,7 @@ export async function POST(request: Request) {
     data: {
       ...data,
       categoryId: data.categoryId || undefined,
-      images: imageUrl ? { create: { url: imageUrl, alt: data.name } } : undefined
+      images: imageUrl ? { create: { url: imageUrl, alt: menuImageAlt(imageUrl, data.name) } } : undefined
     }
   });
   return NextResponse.json(product);

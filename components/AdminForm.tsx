@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { MENU_IMAGE_OPTIONS } from "@/lib/menu-images";
 
 export function ProductForm({ categories }: { categories: { id: string; name: string }[] }) {
   const router = useRouter();
@@ -9,12 +10,8 @@ export function ProductForm({ categories }: { categories: { id: string; name: st
   const [selectedArt, setSelectedArt] = useState("");
 
   const menuArt = [
-    { value: "", label: "Choose pixel art (or enter URL below)" },
-    { value: "/menu-art/focaccia.jpg", label: "🍞 Focaccia" },
-    { value: "/menu-art/herb-focaccia.jpg", label: "🌿 Herb Focaccia" },
-    { value: "/menu-art/artisan-bread.jpg", label: "🥖 Artisan Bread" },
-    { value: "/menu-art/bagels.jpg", label: "🥯 Bagels" },
-    { value: "/menu-art/cookies.jpg", label: "🍪 Cookies" },
+    { value: "", label: "Choose a photo or illustration (or enter URL below)" },
+    ...MENU_IMAGE_OPTIONS.map(({ value, label }) => ({ value, label }))
   ];
 
   async function submit(formData: FormData) {
