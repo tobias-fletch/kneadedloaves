@@ -9,7 +9,7 @@ import {
   deliverContactMessage,
   type OutgoingMail
 } from "@/lib/contact-message";
-import { mailboxAddress, smtpTransport } from "@/lib/email-queue";
+import { mailTransport, mailboxAddress } from "@/lib/email-queue";
 import { allowedSenderMailbox } from "@/lib/mail-provider";
 import { readJson } from "@/lib/request";
 import { contactRateLimit } from "@/lib/contact-rate-limit";
@@ -20,14 +20,14 @@ const EMAIL_FALLBACK = `You can also email us at ${CONTACT_MAILBOX}.`;
 export type ContactRouteDeps = {
   env?: Record<string, string | undefined>;
   limit?: typeof contactRateLimit;
-  transport?: () => Promise<{ from: string; sendMail: (mail: OutgoingMail) => Promise<unknown> }>;
+  transport?: (env: Record<string, string | undefined>) => Promise<{ from: string; sendMail: (mail: OutgoingMail) => Promise<unknown> }>;
   claim?: typeof claimDailyConfirmation;
   log?: (message: string) => void;
   now?: () => Date;
 };
 
-async function defaultTransport() {
-  const { from, sendMail } = await smtpTransport();
+async function defaultTransport(env: Record<string, string | undefined>) {
+  const { from, sendMail } = await mailTransport(undefined, env);
   return { from, sendMail: (mail: OutgoingMail) => sendMail(mail) };
 }
 
@@ -85,13 +85,13 @@ export async function handleContactPost(request: Request, deps: ContactRouteDeps
   let from: string | undefined;
   if (mode === "live") {
     try {
-      const transport = await (deps.transport ?? defaultTransport)();
-      // Contact mail goes out only as the bakery: noreply@kneadedloaves.com (Resend) or the Gmail fallback account.
+      const transport = await (deps.transport ?? defaultTransport)(env);
+      // Contact mail goes out only as the bakery: noreply@kneadedloaves.com through Resend.
       if (!allowedSenderMailbox(mailboxAddress(transport.from))) throw new Error("Sender mailbox mismatch.");
       sendMail = transport.sendMail;
       from = transport.from;
     } catch {
-      console.error(`[contact] Email is not configured to send as ${CONTACT_MAILBOX} or a kneadedloaves.com address; cannot send.`);
+      console.error("[contact] Site email (Resend) is not configured to send as a kneadedloaves.com address; cannot send.");
       return NextResponse.json({ error: `Our email is having a moment. ${EMAIL_FALLBACK}` }, { status: 503 });
     }
   } else {

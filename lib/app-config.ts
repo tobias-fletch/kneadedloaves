@@ -2,7 +2,6 @@ import type { Prisma } from "@prisma/client";
 import { UNDECRYPTABLE_SETTING_MESSAGE } from "@/lib/config-messages";
 import { configEncryptionKeyStatus, decryptSecret } from "@/lib/secrets";
 import { prisma } from "@/lib/prisma";
-import { resendOverride } from "@/lib/mail-provider";
 
 export const setupConfigFields = [
   { key: "VENMO_CHECKOUT_ENABLED", label: "Enable manual Venmo checkout", group: "Manual Venmo", secret: false, input: "checkbox", optional: true },
@@ -14,11 +13,6 @@ export const setupConfigFields = [
   { key: "APP_URL", label: "Public shop URL", group: "Launch", secret: false },
   { key: "JWT_SECRET", label: "Session secret", group: "Launch", secret: true },
   { key: "CHECKOUT_SMOKE_TESTED", label: "Customer checkout smoke tested", group: "Launch", secret: false, input: "checkbox", optional: true },
-  { key: "EMAIL_FROM", label: "From email", group: "Email", secret: false },
-  { key: "SMTP_HOST", label: "SMTP host", group: "Email", secret: false },
-  { key: "SMTP_PORT", label: "SMTP port", group: "Email", secret: false },
-  { key: "SMTP_USER", label: "SMTP username", group: "Email", secret: true },
-  { key: "SMTP_PASSWORD", label: "SMTP password", group: "Email", secret: true },
   { key: "EMAIL_PICKUP_SUBJECT", label: "Pickup email subject", group: "Email", secret: false, optional: true },
   { key: "EMAIL_PICKUP_BODY", label: "Pickup email body", group: "Email", secret: false, optional: true },
   { key: "EMAIL_DELIVERY_SUBJECT", label: "Delivery email subject", group: "Email", secret: false, optional: true },
@@ -36,9 +30,6 @@ export function isSetupConfigKey(key: string): key is SetupConfigKey {
 type StoredConfig = { value: string; secret: boolean };
 
 export function readStoredConfig(key: string, stored: StoredConfig | undefined) {
-  // RESEND_API_KEY switches every mail setting to the Resend relay (see lib/mail-provider.ts).
-  const resend = resendOverride(key);
-  if (resend !== undefined) return { value: resend, undecryptable: false };
   const envValue = process.env[key]?.trim() || "";
   if (envValue) return { value: envValue, undecryptable: false };
   const raw = stored?.value?.trim() || "";
@@ -79,7 +70,7 @@ export async function getSetupConfigSummary() {
   const encryptionKeyValid = configEncryptionKeyStatus().valid;
   return setupConfigFields.map((field) => {
     const savedItem = savedByKey.get(field.key);
-    const envValue = resendOverride(field.key) ?? (process.env[field.key]?.trim() || "");
+    const envValue = process.env[field.key]?.trim() || "";
     const savedValue = savedItem?.value?.trim() || "";
     const read = readStoredConfig(field.key, savedItem ? { value: savedItem.value, secret: savedItem.secret } : undefined);
     const value = read.value;

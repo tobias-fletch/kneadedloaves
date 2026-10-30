@@ -28,10 +28,6 @@ export function setupErrorResponse(error: unknown) {
   return NextResponse.json({ error: message }, { status: 500 });
 }
 
-function gmailHost(value: string | undefined) {
-  return (value || "").trim().toLowerCase().replace(/\.$/, "") === "smtp.gmail.com";
-}
-
 export async function saveSetupSettings(request: Request) {
   const parsed = updateSchema.safeParse(await readJson(request));
   if (!parsed.success || new Set(parsed.data?.values.map(item => item.key)).size !== parsed.data?.values.length) return NextResponse.json({ error: "Invalid setup settings." }, { status: 400 });
@@ -42,15 +38,7 @@ export async function saveSetupSettings(request: Request) {
   const encrypted = new Map<string, string>();
   if (secretWrites.length) {
     assertConfigEncryptionKey();
-    const submittedHost = parsed.data.values.find(item => item.key === "SMTP_HOST" && !item.clear)?.value;
-    const host = process.env.SMTP_HOST?.trim() || submittedHost || (await getAppConfigValues(["SMTP_HOST"])).SMTP_HOST;
-    const gmail = gmailHost(host);
-    for (const item of secretWrites) {
-      let value = item.value.trim();
-      if (item.key === "SMTP_PASSWORD" && gmail) value = value.replace(/\s+/g, "");
-      if (!value) continue;
-      encrypted.set(item.key, encryptSecret(value));
-    }
+    for (const item of secretWrites) encrypted.set(item.key, encryptSecret(item.value.trim()));
   }
   return prisma.$transaction(async tx => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'manual-payment-config'}))`;

@@ -71,6 +71,6 @@ async function main() {
   await prisma.emailJob.update({ where: { id: job.id }, data: { attempts: 4, availableAt: new Date(0) } });
   await processEmailQueue();
   assert.equal((await prisma.emailJob.findUniqueOrThrow({ where: { id: job.id } })).status, "FAILED");
-  console.log("PASS: missing SMTP retries and eventually exposes a failed delivery");
+  console.log("PASS: missing RESEND_API_KEY retries and eventually exposes a failed delivery");
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => prisma.$disconnect());

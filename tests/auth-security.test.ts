@@ -96,8 +96,9 @@ test("rate-limit storage failures reject attempts", async t => {
   assert.equal((await action("forgot-password", { email: "customer@example.invalid" })).status, 429);
 });
 
-test("SMTP failure reveals no reset link or account existence and issues no token", async t => {
-  environment(t, { SMTP_HOST: undefined, SMTP_PORT: undefined, SMTP_USER: undefined, SMTP_PASSWORD: undefined, EMAIL_FROM: undefined });
+test("missing RESEND_API_KEY reveals no reset link or account existence and issues no token", async t => {
+  // Old Gmail settings must not count as configured email any more.
+  environment(t, { RESEND_API_KEY: undefined, SMTP_HOST: "smtp.gmail.com", SMTP_PORT: "465", SMTP_USER: "kneadedloaves@gmail.com", SMTP_PASSWORD: "old-gmail-app-password", EMAIL_FROM: "kneadedloaves@gmail.com" });
   fakeStorage(t);
   stub(t, prisma.appConfig, "findMany", async () => []);
   const create = stub(t, prisma.passwordReset, "create", async () => { throw new Error("must not issue token"); });
@@ -112,7 +113,7 @@ test("SMTP failure reveals no reset link or account existence and issues no toke
 });
 
 test("recovery credentials are queued only to the owner and never returned in HTTP", async t => {
-  environment(t, { SMTP_HOST: "smtp.example.invalid", SMTP_PORT: "587", SMTP_USER: "test", SMTP_PASSWORD: "test", EMAIL_FROM: "test@example.invalid" });
+  environment(t, { RESEND_API_KEY: "re_test_placeholder_not_real" });
   const user = fakeStorage(t);
   stub(t, prisma.appConfig, "findMany", async () => []);
   stub(t, prisma.passwordReset, "deleteMany", async () => ({ count: 1 }));

@@ -1,6 +1,7 @@
 import { readAppConfig } from "@/lib/app-config";
 import { ENCRYPTION_KEY_MISCONFIGURED_MESSAGE, UNDECRYPTABLE_SETTING_MESSAGE } from "@/lib/config-messages";
-import { paymentConfigKeys, paymentReadiness } from "@/lib/manual-payment-config";
+import { paymentConfigKeys, paymentReadiness, withEmailStatus } from "@/lib/manual-payment-config";
+import { resendConfigured } from "@/lib/mail-provider";
 import { prisma } from "@/lib/prisma";
 import { configEncryptionKeyStatus } from "@/lib/secrets";
 import { originFromEnv } from "@/lib/delivery-distance";
@@ -70,8 +71,9 @@ export async function getSetupChecklist() {
 
   const configRead = await readAppConfig([...paymentConfigKeys]);
   const config = configRead.values;
-  const payment = { ...config, ...paymentReadiness(config) };
-  const emailReady = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM"].every((key) => Boolean(config[key as keyof typeof config])) && [465, 587, 2525].includes(Number(config.SMTP_PORT));
+  const payment = { ...config, ...paymentReadiness(withEmailStatus(config)) };
+  // Site email goes only through Resend; the key itself is never read into the checklist.
+  const emailReady = resendConfigured();
   const appUrl = config.APP_URL;
   const jwtSecret = payment.JWT_SECRET;
 
@@ -145,7 +147,7 @@ export async function getSetupChecklist() {
       id: "email-provider",
       group: "Notifications",
       title: "Connect email notifications",
-      detail: "Configure authenticated TLS email in Setup. Saved credentials alone do not prove that queued messages were delivered.",
+      detail: "Site email is sent through Resend. Set RESEND_API_KEY in Vercel (it is never saved in Setup). A configured key alone does not prove that queued messages were delivered.",
       href: "/admin/setup",
       complete: emailReady
     },

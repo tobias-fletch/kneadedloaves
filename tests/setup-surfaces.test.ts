@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test, { type TestContext } from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { createElement } from "react";
+import { ResendStatus } from "../components/SetupSettingsForm";
 import { setupConfigKeys } from "../lib/app-config";
 import { prisma } from "../lib/prisma";
 import { destinationFingerprint, paymentConfigKeys } from "../lib/manual-payment-config";
@@ -26,9 +28,12 @@ function fixture(t: TestContext) {
   const values: Record<string, string> = {
     VENMO_CHECKOUT_ENABLED: "true", VENMO_HANDLE: "@test-bakery", VENMO_DESTINATION: "https://www.venmo.com/u/test-bakery",
     VENMO_DESTINATION_VERIFIED: "true", PAYMENT_HOLD_MINUTES: "30", PAYMENT_WORKERS_READY: "true", CHECKOUT_SMOKE_TESTED: "true",
-    APP_URL: "https://shop.example.test", JWT_SECRET: "fixture-session-secret-over-32-characters",
-    SMTP_HOST: "smtp.example.test", SMTP_PORT: "587", SMTP_USER: "fixture-smtp-user", SMTP_PASSWORD: "fixture-smtp-secret", EMAIL_FROM: "bakery@example.test"
+    APP_URL: "https://shop.example.test", JWT_SECRET: "fixture-session-secret-over-32-characters"
   };
+  // Site email is configured by RESEND_API_KEY alone (a placeholder; nothing is sent).
+  const previousResend = process.env.RESEND_API_KEY;
+  process.env.RESEND_API_KEY = "re_test_placeholder_not_real";
+  t.after(() => { if (previousResend === undefined) delete process.env.RESEND_API_KEY; else process.env.RESEND_API_KEY = previousResend; });
   values.VENMO_VERIFIED_FINGERPRINT = destinationFingerprint(values.VENMO_HANDLE, values.VENMO_DESTINATION);
   stub(t, prisma.appConfig, "findMany", async () => Object.entries(values).map(([key, value]) => ({ key, value, secret: false })));
   stub(t, prisma.adminSettings, "findFirst", async () => ({ notificationEmail: "owner@example.test", instagramHandle: "test-bakery" }));
@@ -82,10 +87,17 @@ test("destination changes invalidate readiness and ignored legacy templates cann
   assert.match(result.incomplete.find(item => item.id === "lifecycle-email-test")!.detail, /Legacy pickup and delivery templates are not used/);
 });
 
-test("checklist rejects insecure email ports and noncanonical or local launch URLs", async t => {
+test("checklist requires RESEND_API_KEY for email and rejects noncanonical or local launch URLs", async t => {
   const values = fixture(t);
-  values.SMTP_PORT = "25";
-  assert.ok((await getSetupChecklist()).incomplete.some(item => item.id === "email-provider"));
+  assert.ok(!(await getSetupChecklist()).incomplete.some(item => item.id === "email-provider"));
+  delete process.env.RESEND_API_KEY;
+  const withoutResend = await getSetupChecklist();
+  const emailItem = withoutResend.incomplete.find(item => item.id === "email-provider");
+  assert.ok(emailItem);
+  assert.match(emailItem.detail, /RESEND_API_KEY/);
+  assert.doesNotMatch(emailItem.detail, /SMTP|Gmail|TLS email/);
+  assert.ok(withoutResend.incomplete.some(item => item.id === "lifecycle-email-test"));
+  process.env.RESEND_API_KEY = "re_test_placeholder_not_real";
   for (const value of ["http://shop.example.test", "https://localhost", "https://127.0.0.1", "https://user:pass@shop.example.test", "https://shop.example.test/path", "https://shop.example.test?token=x"]) {
     values.APP_URL = value;
     assert.ok((await getSetupChecklist()).incomplete.some(item => item.id === "public-url"), value);
@@ -141,4 +153,13 @@ test("email admin renders truthful lifecycle and no legacy template panel or edi
   assert.doesNotMatch(html, /<textarea|name="pickupSubject"|name="deliverySubject"|Save templates|Edit the confirmation emails/);
   assert.match(html, /action="\/api\/admin\/email\/retry"/);
   assert.match(html, /Retry delivery/);
+});
+
+test("Resend status badge shows configured state without exposing the key", () => {
+  const off = renderToStaticMarkup(createElement(ResendStatus, { status: { resendConfigured: false } }));
+  const on = renderToStaticMarkup(createElement(ResendStatus, { status: { resendConfigured: true } }));
+  assert.match(off, /data-testid="resend-status"/);
+  assert.match(off, /Not configured/);
+  assert.match(on, />Configured</);
+  for (const html of [on, off]) assert.doesNotMatch(html, /SMTP|Gmail|re_[A-Za-z0-9]/);
 });

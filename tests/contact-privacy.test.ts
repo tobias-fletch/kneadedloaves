@@ -28,7 +28,8 @@ test("contact page shows email only and never a phone hint or example.com addres
   };
   process.env.CONTACT_EMAIL = "orders@example.com";
   process.env.CONTACT_PHONE = "555-0100";
-  process.env.EMAIL_FROM = "orders@example.com";
+  // The retired EMAIL_FROM var must never become the public contact address.
+  process.env.EMAIL_FROM = "retired-sender@kneadedloaves.com";
   t.after(() => {
     for (const [key, value] of Object.entries(previous)) {
       if (value === undefined) delete process.env[key];
@@ -41,6 +42,7 @@ test("contact page shows email only and never a phone hint or example.com addres
   assert.doesNotMatch(html, /mailto:/, "the address is plain text, never a mailto link");
   assert.match(html, /<form/);
   assert.doesNotMatch(html, /example\.com|555-0100|CONTACT_PHONE|Phone|tel:/);
+  assert.doesNotMatch(html, /retired-sender/);
 });
 
 test("CONTACT_EMAIL overrides the default bakery mailbox", async (t) => {

@@ -1,18 +1,17 @@
 /**
- * Sends ONE clearly labeled fake "admin-new-order" alert through the same render + SMTP code
- * the checkout/email worker use (renderOrderEmail -> mailerSettings -> emailDeliveryMessage -> nodemailer).
+ * Sends ONE clearly labeled fake "admin-new-order" alert through the same render + Resend code
+ * the checkout/email worker use (renderOrderEmail -> mailTransport -> emailDeliveryMessage).
  * Creates no order, touches no database. Never prints secret values.
  *
  * Usage:
- *   node --import tsx scripts/notify-alert-test.ts --env-file /home/box/secure/kl-mail/smtp.env [--to kneadedloaves@gmail.com] [--dry-run]
- * The env file (mode 600) holds SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, EMAIL_FROM as KEY=value lines.
+ *   node --import tsx scripts/notify-alert-test.ts [--env-file <path to a mode-600 file>] [--to kneadedloaves@gmail.com] [--dry-run]
+ * The only setting is RESEND_API_KEY, read from the env file (KEY=value lines) or the environment.
+ * The preview allowlist applies exactly as in the app when VERCEL_ENV is a non-production value.
  */
 import { readFileSync, statSync } from "node:fs";
-import nodemailer from "nodemailer";
 import { renderOrderEmail } from "../lib/order-email";
-import { emailDeliveryMessage, mailerSettings } from "../lib/email-queue";
-
-const KEYS = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM"] as const;
+import { emailDeliveryMessage, mailTransport, mailerSettings } from "../lib/email-queue";
+import { RESEND_SMTP_HOST, RESEND_SMTP_PORT } from "../lib/mail-provider";
 
 function arg(name: string) {
   const i = process.argv.indexOf(name);
@@ -34,9 +33,8 @@ function loadEnvFile(path: string) {
 async function main() {
   const envFile = arg("--env-file");
   const source = envFile ? loadEnvFile(envFile) : process.env;
-  const config = Object.fromEntries(KEYS.map((k) => [k, (source[k] ?? "").trim()])) as Record<(typeof KEYS)[number], string>;
-  const missing = KEYS.filter((k) => !config[k]);
-  if (missing.length) throw new Error(`Missing: ${missing.join(", ")}`);
+  const env = { RESEND_API_KEY: (source.RESEND_API_KEY ?? "").trim(), VERCEL_ENV: process.env.VERCEL_ENV };
+  if (!env.RESEND_API_KEY) throw new Error("Missing: RESEND_API_KEY");
   const to = arg("--to") || "kneadedloaves@gmail.com";
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "");
   const reference = `KL-ALERT-TEST-${stamp}`;
@@ -65,18 +63,17 @@ async function main() {
     html: rendered.html.replace("<body", `<body data-test="alert"`).replace(/(<body[^>]*>)/, `$1<p style="font:bold 18px Arial;color:#b00">TEST ALERT — not a real order (${reference})</p>`)
   };
 
-  const settings = mailerSettings(config); // same validation as production (Gmail from==user, TLS ports)
-  console.log(`SMTP host=${config.SMTP_HOST} port=${config.SMTP_PORT} from=${settings.from} to=${to} reference=${reference}`);
+  const settings = mailerSettings(env); // same settings as production
+  console.log(`Resend relay=${RESEND_SMTP_HOST}:${RESEND_SMTP_PORT} from=${settings.from} to=${to} reference=${reference}`);
   if (process.argv.includes("--dry-run")) { console.log("Dry run: rendered OK, not sent."); return; }
-  const transport = nodemailer.createTransport(settings.options);
-  await transport.verify();
-  const info = await transport.sendMail(emailDeliveryMessage(job, settings.from));
+  const transport = await mailTransport(undefined, env);
+  const info = await transport.sendMail(emailDeliveryMessage(job, transport.from)) as { messageId?: string; accepted?: unknown; rejected?: unknown; response?: unknown };
   console.log(`SENT messageId=${info.messageId} accepted=${JSON.stringify(info.accepted)} rejected=${JSON.stringify(info.rejected)} response=${String(info.response).split(" ").slice(0, 3).join(" ")}`);
   console.log(`Now check the ${to} inbox for subject containing ${reference}.`);
 }
 
 main().catch((error) => {
-  // Error messages from nodemailer/mailerSettings do not contain the password.
+  // Error messages from nodemailer/mailerSettings do not contain the API key.
   console.error(`FAILED: ${error instanceof Error ? error.message.replace(/\s+/g, " ").slice(0, 300) : "unknown error"}`);
   process.exitCode = 1;
 });

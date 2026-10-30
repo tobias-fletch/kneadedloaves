@@ -16,7 +16,7 @@ kneadedloaves.com is the online shop for a small bakery: a weekly menu, a cart, 
 | Data | PostgreSQL through Prisma (schema and migrations in `prisma/`) |
 | Hosting | Vercel (team `tobias-da6e`, project `kneadedloaves`) |
 | Database host | Neon, connected through the Vercel Neon integration |
-| Email | SMTP through nodemailer, queued in the database and sent by the email worker |
+| Email | Resend only (its SMTP relay, through nodemailer), queued in the database and sent by the email worker |
 | Node | `>=22.12` (see `engines`); CI uses Node 24 |
 
 Legacy files that are **not** used by the live site: `Dockerfile`, `compose.yaml`, `netlify.toml` (the site used to run on Netlify).
@@ -76,7 +76,7 @@ Set them in Vercel (Project → Settings → Environment Variables) or a local `
 - **Admin and contact:** `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `ADMIN_NOTIFY_EMAIL`, `CONTACT_EMAIL`, `CONTACT_PHONE`, `CONTACT_LIVE_SEND`, `KL_ORIGIN_LATLNG`
 - **Payments (manual Venmo):** `PAYMENT_HOLD_MINUTES`, `PAYMENT_WORKERS_READY`, `CHECKOUT_SMOKE_TESTED`, `VENMO_CHECKOUT_ENABLED`, `VENMO_HANDLE`, `VENMO_DESTINATION`, `VENMO_DESTINATION_VERIFIED`, `VENMO_VERIFIED_FINGERPRINT`
 - **Stripe (legacy, not the live payment path):** `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PUBLISHABLE_KEY`, `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY`, `STRIPE_MCP_KEY`
-- **Mail:** `EMAIL_FROM`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_OSWALD_FONT`; after PR #41: `RESEND_API_KEY`
+- **Mail:** `RESEND_API_KEY` (the only send path), `EMAIL_OSWALD_FONT`. Contact-form sending is switched by `CONTACT_LIVE_SEND` (above); links in mail use `APP_URL`.
 - **Neon integration (Production only):** `URL_DATABASE_URL`, `URL_DATABASE_URL_UNPOOLED`, `URL_POSTGRES_PRISMA_URL`, `URL_POSTGRES_URL`, `URL_POSTGRES_URL_NON_POOLING`, `URL_POSTGRES_URL_NO_SSL`, `URL_PGHOST`, `URL_PGHOST_UNPOOLED`, `URL_PGUSER`, `URL_PGPASSWORD`, `URL_PGDATABASE`, `URL_POSTGRES_HOST`, `URL_POSTGRES_USER`, `URL_POSTGRES_PASSWORD`, `URL_POSTGRES_DATABASE`, `URL_NEON_PROJECT_ID`, `URL_NEON_AUTH_BASE_URL`, `URL_VITE_NEON_AUTH_URL`
 - **Preview guard:** `PRODUCTION_DB_HOST` (optional extra host to refuse)
 - **Public / analytics:** `NEXT_PUBLIC_CF_ANALYTICS_TOKEN`, `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION`
@@ -118,13 +118,17 @@ The `URL_*` variables exist only in the Production environment. Preview deployme
 
 - Hosting: Vercel, team `tobias-da6e`, project `kneadedloaves`. Health check: `/api/health`.
 - DNS for kneadedloaves.com is at **IONOS** (records point at Vercel).
-- Email DNS (to confirm current state): the domain was locked down with strict SPF/DMARC and a null MX because it does not receive mail. PR #41 needs Resend's sending records (DKIM/SPF on a sending subdomain) added at IONOS before go-live.
+- Email DNS (to confirm current state): the domain was locked down with strict SPF/DMARC and a null MX because it does not receive mail. Resend needs its sending records (DKIM, plus SPF/MX on the `send.` subdomain) at IONOS for mail to deliver.
 
 ## 9. Email
 
-- Today: the email queue lives in the database; the email worker sends over SMTP using the `SMTP_*` and `EMAIL_FROM` settings.
-- **Moving to Resend (PR #41, open, not merged):** when `RESEND_API_KEY` is set, mail goes through Resend's SMTP relay from the public sender **noreply@kneadedloaves.com**. With the key unset, the old SMTP settings still apply. Non-production deployments only email a small test allowlist.
-- Contact form live sending is controlled by `CONTACT_LIVE_SEND`.
+- **Resend is the only way the site sends email.** Order, reservation, payment, password-reset and contact-form mail is queued in the database and sent by the email worker (and, on Vercel, right after checkout) through Resend's SMTP relay (`smtp.resend.com`, port 465, user `resend`, password = `RESEND_API_KEY`). Code: `lib/mail-provider.ts`, `lib/email-queue.ts`.
+- Every message is From **Kneaded Loaves <noreply@kneadedloaves.com>** with Reply-To **kneadedloaves@gmail.com**. Contact-form notifications go TO kneadedloaves@gmail.com. A From outside kneadedloaves.com is refused.
+- If `RESEND_API_KEY` is not set, nothing is sent: queued jobs retry and then show as failed, checkout stays closed (readiness needs email), and Admin > Setup shows "Not configured". There is no Gmail fallback any more.
+- The key is set only in Vercel, never in Admin > Setup. Setup shows a "Configured / Not configured" Resend status and never shows the key.
+- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD` and `EMAIL_FROM` are no longer read anywhere. Old values saved in the database (`AppConfig` rows) are left in place but ignored; no migration removes them.
+- Non-production deployments (Vercel preview/development) only email `tobias.fletch@gmail.com` and `kneadedloaves@gmail.com`.
+- Contact form live sending is controlled by `CONTACT_LIVE_SEND`; the public contact address is `CONTACT_EMAIL` or the bakery default, never a sender setting.
 
 ## 10. Tests and CI
 
@@ -153,8 +157,10 @@ The `URL_*` variables exist only in the Production environment. Preview deployme
 
 - kl-cron Worker schedule and where its code lives (not in this repo).
 - The menu/photo freeze end date.
-- Resend DNS records at IONOS for PR #41.
+- Resend DNS records at IONOS.
+- When to delete the retired `SMTP_*` / `EMAIL_FROM` Vercel env vars (after the Resend-only PR is live).
 
 ## Changelog
 
 - 2026-10-29: guide created
+- 2026-10-29: email is Resend only. Removed the Gmail SMTP fallback, the `SMTP_*` and `EMAIL_FROM` settings, the Setup "Check SMTP connection" button and its route; Setup now shows a Resend status. Old SMTP values in the database are ignored, not deleted.

@@ -51,7 +51,7 @@ export async function getContactDetails(): Promise<ContactDetails> {
   const settings = await prisma.adminSettings.findFirst().catch(() => null);
   return {
     bakeryName: settings?.bakeryName ?? "Kneaded Loaves",
-    email: resolvePublicContactEmail(process.env.CONTACT_EMAIL, settings?.notificationEmail, process.env.EMAIL_FROM),
+    email: resolvePublicContactEmail(process.env.CONTACT_EMAIL, settings?.notificationEmail),
     phone: "",
     phoneHref: "",
     instagramHandle: normalizeInstagramHandle(settings?.instagramHandle)

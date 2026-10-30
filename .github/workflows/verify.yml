@@ -45,6 +45,11 @@ jobs:
       - run: npm run build:runtime
       - run: npm run prisma:deploy
       - name: Integration tests
+        env:
+          # Placeholder so checkout readiness sees site email as configured. The dev server never
+          # sends here (VERCEL is unset, so checkout does not send inline) and the test removes it
+          # before running the email worker, so nothing contacts Resend.
+          RESEND_API_KEY: ci-placeholder-not-a-real-resend-key
         run: |
           npm run dev -- --hostname 127.0.0.1 --port 3001 > /tmp/bakery-test.log 2>&1 &
           for attempt in $(seq 1 30); do

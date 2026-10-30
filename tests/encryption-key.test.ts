@@ -22,7 +22,8 @@ function restore(t: { after: (fn: () => void) => void }, key: string) {
 
 test("encryption key and setup save failures stay JSON and never echo the key", async (t) => {
   restore(t, "CONFIG_ENCRYPTION_KEY");
-  restore(t, "SMTP_HOST");
+  restore(t, "JWT_SECRET");
+  restore(t, "RESEND_API_KEY");
 
   await t.test("padded and quoted keys encrypt, and a bad key reports length without its value", () => {
     for (const value of [hex, `  ${hex}\n`, `"${hex}"`, `'${hex}'`, `  " ${hex} "  `]) {
@@ -49,7 +50,7 @@ test("encryption key and setup save failures stay JSON and never echo the key", 
   await t.test("setup route returns JSON 500 and writes nothing when the key cannot encrypt", async () => {
     const bad = "quoted-bad-key";
     process.env.CONFIG_ENCRYPTION_KEY = bad;
-    delete process.env.SMTP_HOST;
+    delete process.env.JWT_SECRET;
     let writes = 0;
     const transaction = prisma.$transaction;
     const upsert = prisma.appConfig.upsert;
@@ -65,7 +66,7 @@ test("encryption key and setup save failures stay JSON and never echo the key", 
     });
     const response = await handleSetupPost(new Request("https://kneadedloaves.com/api/admin/setup", {
       method: "POST",
-      body: JSON.stringify({ values: [{ key: "SMTP_PASSWORD", value: "abcd efgh ijkl mnop" }, { key: "SMTP_HOST", value: "smtp.gmail.com" }] })
+      body: JSON.stringify({ values: [{ key: "JWT_SECRET", value: "abcd efgh ijkl mnop fixture session secret" }] })
     }), async () => ({ role: "ADMIN" }));
     assert.equal(response.status, 500);
     assert.deepEqual(await response.json(), { error: ENCRYPTION_KEY_MISCONFIGURED_MESSAGE });
@@ -74,9 +75,9 @@ test("encryption key and setup save failures stay JSON and never echo the key", 
     assert.doesNotMatch(logs.join("\n"), /quoted-bad-key|abcd efgh/);
   });
 
-  await t.test("gmail app password spaces are removed before the secret is stored", async () => {
+  await t.test("secrets are trimmed and stored encrypted; retired Gmail SMTP keys are never written", async () => {
     process.env.CONFIG_ENCRYPTION_KEY = hex;
-    delete process.env.SMTP_HOST;
+    delete process.env.JWT_SECRET;
     const saved: { key: string; value: string }[] = [];
     const transaction = prisma.$transaction;
     Reflect.set(prisma, "$transaction", async (run: (tx: { $executeRaw: () => Promise<void>; appConfig: { findMany: () => Promise<unknown[]>; deleteMany: () => Promise<void>; upsert: (args: { where: { key: string }; create: { value: string } }) => Promise<void> } }) => Promise<unknown>) => run({
@@ -90,13 +91,14 @@ test("encryption key and setup save failures stay JSON and never echo the key", 
     t.after(() => { Reflect.set(prisma, "$transaction", transaction); });
     const response = await handleSetupPost(new Request("https://kneadedloaves.com/api/admin/setup", {
       method: "POST",
-      body: JSON.stringify({ values: [{ key: "SMTP_HOST", value: "smtp.gmail.com" }, { key: "SMTP_PASSWORD", value: "abcd efgh ijkl mnop" }] })
+      body: JSON.stringify({ values: [{ key: "SMTP_HOST", value: "smtp.gmail.com" }, { key: "SMTP_PASSWORD", value: "abcd efgh ijkl mnop" }, { key: "JWT_SECRET", value: "  fixture-session-secret-over-32-characters  " }] })
     }), async () => ({ role: "ADMIN" }));
     assert.equal(response.status, 200);
-    const password = saved.find(item => item.key === "SMTP_PASSWORD");
-    assert.ok(password);
-    assert.equal(decryptSecret(password.value), "abcdefghijklmnop");
-    assert.equal(saved.find(item => item.key === "SMTP_HOST")?.value, "smtp.gmail.com");
+    const secret = saved.find(item => item.key === "JWT_SECRET");
+    assert.ok(secret);
+    assert.notEqual(secret.value, "fixture-session-secret-over-32-characters");
+    assert.equal(decryptSecret(secret.value), "fixture-session-secret-over-32-characters");
+    assert.equal(saved.some(item => item.key.startsWith("SMTP_")), false);
   });
 
   await t.test("the setup form shows the server error, including a non-JSON response", async () => {
@@ -133,11 +135,20 @@ test("encryption key and setup save failures stay JSON and never echo the key", 
     assert.match(item.detail, /Vercel environment variable/);
     assert.doesNotMatch(JSON.stringify(checklist), /health-key-is-invalid/);
     const summary = await getSetupConfigSummary();
-    assert.equal(summary.find(field => field.key === "SMTP_PASSWORD")?.encryptionKeyValid, false);
-    const html = renderToStaticMarkup(createElement(AppRouterContext.Provider, { value: router }, createElement(SetupSettingsForm, { fields: summary })));
+    assert.equal(summary.find(field => field.key === "JWT_SECRET")?.encryptionKeyValid, false);
+    assert.equal(summary.some(field => /^SMTP_|^EMAIL_FROM$/.test(field.key)), false);
+    const render = (resendConfigured: boolean) => renderToStaticMarkup(createElement(AppRouterContext.Provider, { value: router }, createElement(SetupSettingsForm, { fields: summary, emailStatus: { resendConfigured } })));
+    const html = render(false);
     assert.match(html, /CONFIG_ENCRYPTION_KEY must be 64 hex characters/);
-    assert.match(html, /Check SMTP connection/);
-    assert.match(html, /does not send a message/);
+    assert.doesNotMatch(html, /Check SMTP connection|SMTP|Gmail app password/);
+    assert.match(html, /Resend/);
+    assert.match(html, /Not configured/);
+    assert.match(html, /RESEND_API_KEY is not set/);
+    process.env.RESEND_API_KEY = "re_test_placeholder_never_rendered";
+    const configured = render(true);
+    assert.match(configured, />Configured</);
+    assert.match(configured, /noreply@kneadedloaves\.com/);
+    assert.doesNotMatch(configured, /re_test_placeholder_never_rendered/);
     assert.doesNotMatch(html, /health-key-is-invalid/);
     process.env.CONFIG_ENCRYPTION_KEY = hex;
     assert.equal((await health().then(response => response.json())).encryptionKeyValid, true);
