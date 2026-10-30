@@ -7,7 +7,15 @@ export async function readSetupSaveError(response: Response) {
   const body = await response.json().catch(() => ({} as { error?: string }));
   return body.error || `Save failed (HTTP ${response.status})`;
 }
-export function SetupSettingsForm({ fields }: { fields: Field[] }) {
+export type EmailStatus = { resendConfigured: boolean };
+/** Resend status for the Email group. Reports only whether RESEND_API_KEY is set, never its value. */
+export function ResendStatus({ status }: { status: EmailStatus }) {
+  return <div className="mt-4 border-2 border-ink bg-crumb p-3 text-sm" data-testid="resend-status">
+    <p className="flex flex-wrap items-center gap-2 font-bold"><span>Resend</span><span className="badge bg-page">{status.resendConfigured ? "Configured" : "Not configured"}</span></p>
+    <p className="mt-1">{status.resendConfigured ? "RESEND_API_KEY is set in the deployment environment. Site email is sent as Kneaded Loaves <noreply@kneadedloaves.com> with replies to kneadedloaves@gmail.com." : "RESEND_API_KEY is not set in the deployment environment, so site email is not sent. Add it in Vercel; it is never saved here."}</p>
+  </div>;
+}
+export function SetupSettingsForm({ fields, emailStatus }: { fields: Field[]; emailStatus?: EmailStatus }) {
   const router = useRouter(), submittingRef = useRef(false);
   const [message, setMessage] = useState(""), [busy, setBusy] = useState(false);
   const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(fields.map(field => [field.key, field.secret ? "" : field.value])));
@@ -27,22 +35,11 @@ export function SetupSettingsForm({ fields }: { fields: Field[] }) {
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not save setup settings. Please try again."); }
     finally { submittingRef.current = false; setBusy(false); }
   }
-  async function checkSmtp() {
-    if (submittingRef.current) return;
-    submittingRef.current = true; setBusy(true); setMessage("");
-    try {
-      const response = await fetch("/api/admin/setup/smtp", { method: "POST" });
-      const body = await response.json().catch(() => ({} as { error?: string; message?: string }));
-      if (!response.ok) throw new Error(body.error || `SMTP check failed (HTTP ${response.status})`);
-      setMessage(body.message || "SMTP connection succeeded. No message was sent.");
-    } catch (error) { setMessage(error instanceof Error ? error.message : "SMTP connection could not be verified. No message was sent."); }
-    finally { submittingRef.current = false; setBusy(false); }
-  }
   return <form onSubmit={submit} className="space-y-5"><fieldset disabled={busy} className="space-y-5 disabled:opacity-60">
     {Array.from(new Set(fields.map(field => field.group))).map(group => <section className="panel p-4" key={group}>
       <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-black">{group}</h2><p className="mt-1 text-sm text-ink/70">Save setup values here so the shop can use them without code edits.</p></div></div>
       {fields.some(field => field.group === group && field.key.startsWith("VENMO_")) ? <p className="mt-3 border-2 border-ink bg-crumb p-3 text-sm">Manual Venmo checkout stays off until all readiness checks pass. Use the bakery’s actual business receiving destination. A public profile alone does not verify business eligibility or receipt of payment. Changing the handle or receiving link requires a fresh destination check.</p> : null}
-      {group === "Email" ? <div className="mt-4"><button className="btn-secondary" type="button" onClick={checkSmtp}>Check SMTP connection</button><p className="mt-2 text-xs text-ink/70">Uses SMTP verify and does not send a message. Spaces in a Gmail app password are removed.</p></div> : null}
+      {group === "Email" && emailStatus ? <ResendStatus status={emailStatus} /> : null}
       <div className="mt-4 grid gap-3 md:grid-cols-2">{fields.filter(field => field.group === group).map(field => <div className="space-y-1" key={field.key}>
         <label htmlFor={`setup-${field.key}`} className="flex items-center justify-between gap-2"><span>{field.label}</span><span className="badge bg-crumb">{field.undecryptable && !field.envConfigured ? "Re-enter" : field.input === "checkbox" ? (values[field.key] === "true" ? "On" : "Off") : (field.secret ? field.envConfigured || field.savedInAdmin : Boolean(values[field.key]?.trim())) ? "Set" : "Missing"}</span></label>
         {field.input === "checkbox" ? <label className="flex min-h-11 items-start gap-3 border-2 border-ink bg-page p-3 text-sm normal-case tracking-normal"><input id={`setup-${field.key}`} className="mt-1 h-4 w-4 shrink-0" name={field.key} type="checkbox" checked={values[field.key] === "true"} onChange={event => update(field.key, event.target.checked ? "true" : "false")} disabled={field.envConfigured} /><span>{field.key === "VENMO_DESTINATION_VERIFIED" ? "I checked this exact handle and copied receiving link in the bakery’s Venmo business account." : field.label}</span></label> : <input id={`setup-${field.key}`} autoComplete="off" name={field.key} value={values[field.key] ?? ""} onChange={event => update(field.key, event.target.value)} placeholder={field.secret && (field.envConfigured || field.savedInAdmin) ? "Saved, leave blank to keep" : field.key === "VENMO_DESTINATION" ? "Paste the verified receiving link" : field.label} type={field.secret ? "password" : field.key === "PAYMENT_HOLD_MINUTES" ? "number" : "text"} min={field.key === "PAYMENT_HOLD_MINUTES" ? 1 : undefined} max={field.key === "PAYMENT_HOLD_MINUTES" ? 10080 : undefined} step={field.key === "PAYMENT_HOLD_MINUTES" ? 1 : undefined} disabled={field.envConfigured} />}

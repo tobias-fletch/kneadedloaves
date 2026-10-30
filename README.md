@@ -19,7 +19,7 @@ Development-only sample logins from the original seed remain `admin@bakery.local
 ## Checks and operations
 
 - `npm run lint`, `npm test`, `npm run build`, `npm audit`
-- `npm run email:worker` delivers queued email; requires authenticated SMTP. On Vercel the same function runs from `/api/cron/email-worker` and, after checkout, for that order immediately.
+- `npm run email:worker` delivers queued email; requires `RESEND_API_KEY` (site email is sent only through Resend). On Vercel the same function runs from `/api/cron/email-worker` and, after checkout, for that order immediately.
 - `npm run payments:expire` expires overdue unpaid reservations. On Vercel, `/api/cron/payments-expire` is the daily backstop; order pages also expire overdue reservations when they are read.
 - `npm run admin:setup` creates/updates the admin named by ADMIN_EMAIL and ADMIN_PASSWORD.
 - `npm run secrets:encrypt` migrates old saved secrets using CONFIG_ENCRYPTION_KEY.
@@ -31,9 +31,9 @@ Development uses `.next-dev` and production builds use `.next`, avoiding cache c
 
 ## Launch status
 
-The shop is hosted on Vercel. Checkout is not hard-disabled in code. `POST /api/checkout` accepts an order only when the order window is open and `getManualPaymentConfig()` is ready: `VENMO_CHECKOUT_ENABLED`, a verified Venmo handle, destination, fingerprint and hold time, `PAYMENT_WORKERS_READY`, `CHECKOUT_SMOKE_TESTED`, authenticated SMTP, `EMAIL_FROM`, a `JWT_SECRET` of at least 32 characters, and an HTTPS `APP_URL`. Vercel environment variables override Admin > Setup values. The storefront says Orders Open only when that same check passes.
+The shop is hosted on Vercel. Checkout is not hard-disabled in code. `POST /api/checkout` accepts an order only when the order window is open and `getManualPaymentConfig()` is ready: `VENMO_CHECKOUT_ENABLED`, a verified Venmo handle, destination, fingerprint and hold time, `PAYMENT_WORKERS_READY`, `CHECKOUT_SMOKE_TESTED`, site email through Resend (`RESEND_API_KEY`), a `JWT_SECRET` of at least 32 characters, and an HTTPS `APP_URL`. Vercel environment variables override Admin > Setup values. The storefront says Orders Open only when that same check passes.
 
-Order email is queued in the database. On Vercel, a successful checkout sends that order's messages with `after()` so they do not wait for cron. `vercel.json` schedules the email and payment-expiry routes once per day, which is the Hobby plan limit (a per-minute schedule fails deploy, and Hobby may start a daily job up to 59 minutes late). Both routes require `Authorization: Bearer ${CRON_SECRET}` and reject a missing or wrong secret. `npm run email:worker` and `npm run payments:expire` call the same functions for a local or always-on host. Gmail (`smtp.gmail.com`, port 465 SSL or 587 STARTTLS, app password, From matching the authenticated mailbox) allows about 500 messages per day.
+Order email is queued in the database. On Vercel, a successful checkout sends that order's messages with `after()` so they do not wait for cron. `vercel.json` schedules the email and payment-expiry routes once per day, which is the Hobby plan limit (a per-minute schedule fails deploy, and Hobby may start a daily job up to 59 minutes late). Both routes require `Authorization: Bearer ${CRON_SECRET}` and reject a missing or wrong secret. `npm run email:worker` and `npm run payments:expire` call the same functions for a local or always-on host. All site email goes through Resend (`RESEND_API_KEY`) From noreply@kneadedloaves.com with Reply-To kneadedloaves@gmail.com; the old Gmail SMTP settings are no longer used.
 
 Stripe code is still present and unused. Do not use real payment credentials for testing.
 

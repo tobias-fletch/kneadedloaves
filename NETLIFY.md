@@ -16,8 +16,8 @@ migrations on Netlify production deploys exactly as it did on Vercel
      no data moves)
    - `APP_URL` and `NEXT_PUBLIC_APP_URL` — `https://kneadedloaves.com`
    - `JWT_SECRET`, `CONFIG_ENCRYPTION_KEY`
-   - `CONTACT_EMAIL`, `CONTACT_PHONE`, `EMAIL_FROM`
-   - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`
+   - `CONTACT_EMAIL`, `CONTACT_PHONE`
+   - `RESEND_API_KEY` (site email is Resend only)
    - `VENMO_CHECKOUT_ENABLED=false`, `VENMO_HANDLE`, `VENMO_DESTINATION`,
      `VENMO_DESTINATION_VERIFIED`, `VENMO_VERIFIED_FINGERPRINT`,
      `PAYMENT_HOLD_MINUTES`, `PAYMENT_WORKERS_READY`, `CHECKOUT_SMOKE_TESTED`

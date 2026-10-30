@@ -18,7 +18,7 @@ import {
   type OutgoingMail
 } from "../lib/contact-message";
 import { contactClientIp, handleContactPost, submittedTooFast, type ContactRouteDeps } from "../lib/contact-route";
-import { assertPreviewRecipients } from "../lib/mail-provider";
+import { EmailNotConfiguredError, assertPreviewRecipients } from "../lib/mail-provider";
 
 const submittedAt = new Date("2026-10-23T22:11:00Z"); // 6:11 PM EDT
 const message = { name: "Ada Lovelace", email: "ada@example.org", message: "Do you have rye loaves this Sunday?\nThanks!", website: "" };
@@ -59,7 +59,7 @@ function routeDeps(overrides: Partial<ContactRouteDeps> = {}) {
   const deps: ContactRouteDeps = {
     env: { VERCEL_ENV: "production", CONTACT_LIVE_SEND: "true", CONTACT_EMAIL: "tobias-private@kneadedloaves.com" },
     limit: async () => true,
-    transport: async () => ({ from: "Kneaded Loaves <kneadedloaves@gmail.com>", sendMail: transport.sendMail }),
+    transport: async () => ({ from: "Kneaded Loaves <noreply@kneadedloaves.com>", sendMail: transport.sendMail }),
     claim: (email, now, mode) => claimDailyConfirmation(email, now, mode, store),
     log: (line) => logs.push(line),
     now: () => submittedAt,
@@ -169,7 +169,7 @@ test("works with a real nodemailer JSON transport (no network)", async () => {
   assert.deepEqual(JSON.parse(raw[1]).from, { address: "kneadedloaves@gmail.com", name: "Kneaded Loaves" });
 });
 
-test("route: live production sends the notification TO kneadedloaves@gmail.com and a confirmation FROM it", async () => {
+test("route: live production sends the notification TO kneadedloaves@gmail.com and a confirmation FROM noreply@kneadedloaves.com", async () => {
   const { deps, transport } = routeDeps();
   const response = await handleContactPost(request(message), deps);
   assert.equal(response.status, 200);
@@ -179,7 +179,8 @@ test("route: live production sends the notification TO kneadedloaves@gmail.com a
   assert.equal(transport.sent[0].replyTo, "ada@example.org");
   assert.equal(transport.sent[1].to, "ada@example.org");
   assert.match(transport.sent[1].text, /> Do you have rye loaves this Sunday\?/);
-  for (const mail of transport.sent) assert.equal(mail.from, "Kneaded Loaves <kneadedloaves@gmail.com>");
+  for (const mail of transport.sent) assert.equal(mail.from, "Kneaded Loaves <noreply@kneadedloaves.com>");
+  assert.equal(transport.sent[1].replyTo, "kneadedloaves@gmail.com", "customer replies go to the bakery inbox");
 });
 
 test("route: production without CONTACT_LIVE_SEND=true is a dry run", async () => {
@@ -242,13 +243,21 @@ test("route: preview confirmation to an allowlisted tester is sent", async () =>
   assert.deepEqual(sent.map((mail) => mail.to), ["kneadedloaves@gmail.com", "tobias.fletch@gmail.com"]);
 });
 
-test("route: refuses to send when SMTP is set up for a different mailbox", async () => {
+test("route: refuses to send from anything but a kneadedloaves.com mailbox", async () => {
   const other = mockTransport();
   const { deps } = routeDeps({ transport: async () => ({ from: "Someone <someone@example.org>", sendMail: other.sendMail }) });
   const response = await handleContactPost(request(message), deps);
   assert.equal(response.status, 503);
   assert.equal(other.sent.length, 0);
   assert.doesNotMatch(JSON.stringify(await response.json()), /mailto:/);
+});
+
+test("route: the old Gmail sender is refused too (no Gmail fallback)", async () => {
+  const gmail = mockTransport();
+  const { deps } = routeDeps({ transport: async () => ({ from: "Kneaded Loaves <kneadedloaves@gmail.com>", sendMail: gmail.sendMail }) });
+  const response = await handleContactPost(request(message), deps);
+  assert.equal(response.status, 503);
+  assert.equal(gmail.sent.length, 0);
 });
 
 test("route: preview deployments without CONTACT_LIVE_SEND=true log instead of sending and never build a transport", async () => {
@@ -332,12 +341,12 @@ test("client IP comes from X-Forwarded-For only on Vercel or behind a trusted pr
   assert.equal(contactClientIp(req, {}), "shared");
 });
 
-test("route: missing SMTP config in production returns a friendly 503", async () => {
-  const { deps } = routeDeps({ transport: async () => { throw new Error("SMTP configuration is incomplete."); } });
+test("route: missing RESEND_API_KEY in production returns a friendly 503", async () => {
+  const { deps } = routeDeps({ transport: async () => { throw new EmailNotConfiguredError(); } });
   const response = await handleContactPost(request(message), deps);
   assert.equal(response.status, 503);
   const body = await response.json();
-  assert.doesNotMatch(body.error, /SMTP/);
+  assert.doesNotMatch(body.error, /SMTP|RESEND/);
   assert.match(body.error, /kneadedloaves@gmail\.com/);
   assert.doesNotMatch(JSON.stringify(body), /mailto:/);
 });

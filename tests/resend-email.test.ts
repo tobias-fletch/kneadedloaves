@@ -1,79 +1,111 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { emailDeliveryMessage, mailerSettings } from "../lib/email-queue";
-import { readStoredConfig } from "../lib/app-config";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
+import { emailDeliveryMessage, mailTransport, mailerSettings, messageIdDomain } from "../lib/email-queue";
+import { readStoredConfig, setupConfigKeys } from "../lib/app-config";
+import { EMAIL_STATUS_KEY, withEmailStatus } from "../lib/manual-payment-config";
 import {
   EMAIL_REPLY_TO,
-  MAIL_CONFIG_KEYS,
+  EmailNotConfiguredError,
   PREVIEW_ALLOWED_RECIPIENTS,
   PreviewRecipientBlockedError,
   RESEND_EMAIL_FROM,
   allowedSenderMailbox,
   assertPreviewRecipients,
-  mailProvider,
   previewAllowlistActive,
-  resendOverride
+  resendConfigured
 } from "../lib/mail-provider";
 
 const FAKE_KEY = "re_test_not_a_real_key";
+const OLD_GMAIL_KEYS = ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "EMAIL_FROM"];
 
-function resendConfig() {
-  const env = { RESEND_API_KEY: FAKE_KEY };
-  return Object.fromEntries(MAIL_CONFIG_KEYS.map((key) => [key, resendOverride(key, env) as string])) as Record<(typeof MAIL_CONFIG_KEYS)[number], string>;
-}
-
-test("RESEND_API_KEY switches every mail setting to the Resend SMTP relay as noreply@kneadedloaves.com", () => {
-  const config = resendConfig();
-  assert.deepEqual({ ...config, SMTP_PASSWORD: "[set]" }, {
-    SMTP_HOST: "smtp.resend.com",
-    SMTP_PORT: "465",
-    SMTP_USER: "resend",
-    SMTP_PASSWORD: "[set]",
-    EMAIL_FROM: "Kneaded Loaves <noreply@kneadedloaves.com>"
-  });
-  assert.equal(config.SMTP_PASSWORD, FAKE_KEY);
-  const settings = mailerSettings(config);
+test("RESEND_API_KEY alone configures the Resend SMTP relay as noreply@kneadedloaves.com", () => {
+  const settings = mailerSettings({ RESEND_API_KEY: FAKE_KEY });
   assert.equal(settings.from, RESEND_EMAIL_FROM);
+  assert.equal(settings.from, "Kneaded Loaves <noreply@kneadedloaves.com>");
   assert.equal(settings.options.host, "smtp.resend.com");
   assert.equal(settings.options.port, 465);
   assert.equal(settings.options.secure, true);
+  assert.equal(settings.options.requireTLS, false);
   assert.equal(settings.options.auth.user, "resend");
-  assert.equal(mailProvider({ RESEND_API_KEY: FAKE_KEY }), "resend");
+  assert.equal(settings.options.auth.pass, FAKE_KEY);
+  assert.equal(settings.options.disableFileAccess, true);
+  assert.equal(settings.options.disableUrlAccess, true);
+  assert.equal(messageIdDomain(settings.from), "kneadedloaves.com");
 });
 
-test("without RESEND_API_KEY the Gmail SMTP settings are used unchanged (fallback)", () => {
+test("old Gmail SMTP_* and EMAIL_FROM env vars are ignored entirely", () => {
+  const gmailEnv = { SMTP_HOST: "smtp.gmail.com", SMTP_PORT: "587", SMTP_USER: "kneadedloaves@gmail.com", SMTP_PASSWORD: "gmail-app-password", EMAIL_FROM: "Kneaded Loaves <kneadedloaves@gmail.com>" };
+  const settings = mailerSettings({ ...gmailEnv, RESEND_API_KEY: FAKE_KEY });
+  assert.equal(settings.options.host, "smtp.resend.com");
+  assert.equal(settings.options.auth.pass, FAKE_KEY);
+  assert.equal(settings.from, RESEND_EMAIL_FROM);
+  // Without RESEND_API_KEY there is no Gmail fallback: nothing is configured.
+  assert.throws(() => mailerSettings(gmailEnv), EmailNotConfiguredError);
+});
+
+test("without RESEND_API_KEY site email is not configured and the error never names a value", () => {
   for (const env of [{}, { RESEND_API_KEY: "" }, { RESEND_API_KEY: "   " }]) {
-    for (const key of MAIL_CONFIG_KEYS) assert.equal(resendOverride(key, env), undefined);
-    assert.equal(mailProvider(env), "smtp");
+    assert.equal(resendConfigured(env), false);
+    assert.throws(() => mailerSettings(env), (error: unknown) => error instanceof EmailNotConfiguredError && /set RESEND_API_KEY/.test(error.message));
   }
-  assert.equal(resendOverride("JWT_SECRET", { RESEND_API_KEY: FAKE_KEY }), undefined);
-  const gmail = mailerSettings({ SMTP_HOST: "smtp.gmail.com", SMTP_PORT: "465", SMTP_USER: "kneadedloaves@gmail.com", SMTP_PASSWORD: "abcd efgh", EMAIL_FROM: "Kneaded Loaves <kneadedloaves@gmail.com>" });
-  assert.equal(gmail.from, "Kneaded Loaves <kneadedloaves@gmail.com>");
-  assert.equal(gmail.options.host, "smtp.gmail.com");
+  assert.equal(resendConfigured({ RESEND_API_KEY: FAKE_KEY }), true);
 });
 
-test("readStoredConfig prefers the Resend relay over SMTP env vars and saved Gmail values when RESEND_API_KEY is set", () => {
-  const saved = { SMTP_HOST: process.env.SMTP_HOST, EMAIL_FROM: process.env.EMAIL_FROM, RESEND_API_KEY: process.env.RESEND_API_KEY };
+test("mailTransport builds the Resend transport and still enforces the preview allowlist", async () => {
+  const created: Array<{ host: string; auth: { user: string } }> = [];
+  const sent: unknown[] = [];
+  const fake = (options: { host: string; auth: { user: string; pass: string } }) => { created.push(options); return { sendMail: async (message: unknown) => { sent.push(message); return {}; } }; };
+  const preview = await mailTransport(fake, { RESEND_API_KEY: FAKE_KEY, VERCEL_ENV: "preview" });
+  assert.equal(preview.from, RESEND_EMAIL_FROM);
+  assert.equal(created[0].host, "smtp.resend.com");
+  await preview.sendMail({ from: preview.from, to: "tobias.fletch@gmail.com", subject: "s", text: "t" });
+  await assert.rejects(preview.sendMail({ from: preview.from, to: "maya@example.com", subject: "s", text: "t" }), PreviewRecipientBlockedError);
+  assert.equal(sent.length, 1);
+  await assert.rejects(mailTransport(fake, {}), EmailNotConfiguredError);
+  assert.equal(created.length, 1, "no transport is created without RESEND_API_KEY");
+});
+
+test("Admin > Setup no longer stores or reads any Gmail SMTP setting", () => {
+  for (const key of OLD_GMAIL_KEYS) assert.ok(!(setupConfigKeys as readonly string[]).includes(key), key);
+  assert.ok(!(setupConfigKeys as readonly string[]).includes("RESEND_API_KEY"), "the Resend key is env-only");
+  const saved = process.env.RESEND_API_KEY;
   try {
-    process.env.SMTP_HOST = "smtp.gmail.com";
-    process.env.EMAIL_FROM = "Kneaded Loaves <kneadedloaves@gmail.com>";
-    delete process.env.RESEND_API_KEY;
-    assert.equal(readStoredConfig("SMTP_HOST", undefined).value, "smtp.gmail.com");
-    assert.equal(readStoredConfig("EMAIL_FROM", undefined).value, "Kneaded Loaves <kneadedloaves@gmail.com>");
     process.env.RESEND_API_KEY = FAKE_KEY;
-    assert.equal(readStoredConfig("SMTP_HOST", { value: "smtp.gmail.com", secret: false }).value, "smtp.resend.com");
-    assert.equal(readStoredConfig("EMAIL_FROM", undefined).value, "Kneaded Loaves <noreply@kneadedloaves.com>");
-    assert.equal(readStoredConfig("SMTP_PASSWORD", undefined).value, FAKE_KEY);
+    // No Resend override leaks the key through the generic setting reader any more.
+    assert.equal(readStoredConfig("SMTP_PASSWORD", undefined).value, "");
+    assert.equal(readStoredConfig("SMTP_HOST", undefined).value, "");
   } finally {
-    for (const [key, value] of Object.entries(saved)) {
-      if (value === undefined) delete process.env[key]; else process.env[key] = value;
-    }
+    if (saved === undefined) delete process.env.RESEND_API_KEY; else process.env.RESEND_API_KEY = saved;
   }
 });
 
-test("Resend refuses a sender outside kneadedloaves.com, so no other brand can appear in From", () => {
-  assert.throws(() => mailerSettings({ ...resendConfig(), EMAIL_FROM: "TaleSpyre <hello@talespyre.com>" }), /Resend requires the EMAIL_FROM address to be on kneadedloaves\.com/);
-  assert.throws(() => mailerSettings({ ...resendConfig(), EMAIL_FROM: "Kneaded Loaves <kneadedloaves@gmail.com>" }), /Resend requires/);
+test("checkout readiness sees only whether RESEND_API_KEY is set, never its value", () => {
+  const on = withEmailStatus({ APP_URL: "https://kneadedloaves.com" }, { RESEND_API_KEY: FAKE_KEY });
+  const off = withEmailStatus({ APP_URL: "https://kneadedloaves.com" }, {});
+  assert.equal(on[EMAIL_STATUS_KEY], "true");
+  assert.equal(off[EMAIL_STATUS_KEY], "");
+  assert.ok(!JSON.stringify(on).includes(FAKE_KEY));
+});
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir).flatMap(name => {
+    const path = join(dir, name);
+    if (statSync(path).isDirectory()) return sourceFiles(path);
+    return /\.(ts|tsx|mjs|js|sh)$/.test(name) ? [path] : [];
+  });
+}
+
+test("no app, lib, component or script code reads the Gmail SMTP env vars", () => {
+  const offenders: string[] = [];
+  for (const file of ["app", "lib", "components", "scripts"].flatMap(sourceFiles)) {
+    if (file === join("scripts", "build.mjs")) continue; // log redaction pattern only, never a reader
+    const text = readFileSync(file, "utf8");
+    if (/\b(SMTP_HOST|SMTP_PORT|SMTP_USER|SMTP_PASSWORD|EMAIL_FROM)\b/.test(text)) offenders.push(file);
+  }
+  assert.deepEqual(offenders, []);
+  assert.equal(existsSync("app/api/admin/setup/smtp/route.ts"), false, "the SMTP check route is gone");
 });
 
 test("every queued email type carries From noreply@kneadedloaves.com and Reply-To kneadedloaves@gmail.com", () => {
@@ -115,9 +147,9 @@ test("preview allowlist refuses any recipient off the list, including in cc/bcc 
   assert.doesNotThrow(() => assertPreviewRecipients({ to: "maya@example.com" }, { VERCEL_ENV: "production" }));
 });
 
-test("allowed sender mailboxes are the Gmail fallback account or kneadedloaves.com only", () => {
+test("allowed sender mailboxes are kneadedloaves.com only (no Gmail fallback sender)", () => {
   assert.equal(allowedSenderMailbox("noreply@kneadedloaves.com"), true);
-  assert.equal(allowedSenderMailbox("KneadedLoaves@gmail.com"), true);
+  assert.equal(allowedSenderMailbox("KneadedLoaves@gmail.com"), false);
   assert.equal(allowedSenderMailbox("someone@example.org"), false);
   assert.equal(allowedSenderMailbox("hello@talespyre.com"), false);
   assert.equal(allowedSenderMailbox("noreply@kneadedloaves.com.evil.test"), false);

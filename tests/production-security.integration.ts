@@ -151,10 +151,9 @@ async function main() {
     VENMO_CHECKOUT_ENABLED: "true", VENMO_HANDLE: enabledHandle, VENMO_DESTINATION: enabledDestination,
     VENMO_DESTINATION_VERIFIED: "true", VENMO_VERIFIED_FINGERPRINT: digest(JSON.stringify([enabledHandle, enabledDestination])),
     PAYMENT_HOLD_MINUTES: "60", PAYMENT_WORKERS_READY: "true", CHECKOUT_SMOKE_TESTED: "true",
-    APP_URL: canonical, JWT_SECRET: "isolated-production-security-session-secret-not-for-real-use-2026",
-    SMTP_HOST: "127.0.0.1", SMTP_PORT: "465", SMTP_USER: "synthetic-smtp-user", SMTP_PASSWORD: "synthetic-smtp-password",
-    EMAIL_FROM: "synthetic-bakery@example.invalid"
+    APP_URL: canonical, JWT_SECRET: "isolated-production-security-session-secret-not-for-real-use-2026"
   };
+  // Site email readiness comes from a placeholder RESEND_API_KEY exported by the harness; nothing is sent.
   await prisma.appConfig.createMany({ data: Object.entries(enabledConfig).map(([key, value]) => ({ key, value, secret: false })) });
   try {
     const opened = await checkout();

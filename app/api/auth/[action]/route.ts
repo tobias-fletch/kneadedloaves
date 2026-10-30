@@ -4,7 +4,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, getSession, verifyPassword, SESSION_COOKIE } from "@/lib/auth";
 import { readJson, rateLimit } from "@/lib/request";
-import { queueEmail, smtpTransport } from "@/lib/email-queue";
+import { queueEmail } from "@/lib/email-queue";
+import { resendConfigured } from "@/lib/mail-provider";
 
 const emailSchema = z.string().trim().toLowerCase().email().max(254);
 const passwordSchema = z.string().min(12).max(72).refine(value => Buffer.byteLength(value, "utf8") <= 72 && !["admin12345", "customer12345"].includes(value));
@@ -25,9 +26,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ act
     if (action === "forgot-password") {
       const parsed = emailSchema.safeParse(body.email);
       if (!parsed.success) return NextResponse.json({ error: "Enter a valid email." }, { status: 400 });
-      try { await smtpTransport(); } catch {
+      if (!resendConfigured()) {
         // Never expose a recovery credential to an unauthenticated caller.
-        console.error("Password recovery email is unavailable.");
+        console.error("Password recovery email is unavailable: site email (Resend) is not configured.");
         return NextResponse.json({ message: resetMessage });
       }
       const user = await prisma.user.findUnique({ where: { email: parsed.data } });

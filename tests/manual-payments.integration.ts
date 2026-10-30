@@ -26,7 +26,8 @@ async function login(email: string) {
   assert.equal(response.status, 303); assert.ok(response.headers.get("set-cookie")); return response.headers.get("set-cookie")!.split(";")[0];
 }
 async function main() {
-  const config: Record<string, string> = { VENMO_CHECKOUT_ENABLED: "true", VENMO_HANDLE: "@Synthetic-QA", VENMO_DESTINATION: "https://venmo.com/Synthetic-QA", VENMO_DESTINATION_VERIFIED: "true", PAYMENT_HOLD_MINUTES: "30", PAYMENT_WORKERS_READY: "true", CHECKOUT_SMOKE_TESTED: "true", APP_URL: base, SMTP_HOST: "127.0.0.1", SMTP_PORT: "2525", SMTP_USER: "synthetic", SMTP_PASSWORD: "synthetic", EMAIL_FROM: "qa@example.invalid" };
+  const config: Record<string, string> = { VENMO_CHECKOUT_ENABLED: "true", VENMO_HANDLE: "@Synthetic-QA", VENMO_DESTINATION: "https://venmo.com/Synthetic-QA", VENMO_DESTINATION_VERIFIED: "true", PAYMENT_HOLD_MINUTES: "30", PAYMENT_WORKERS_READY: "true", CHECKOUT_SMOKE_TESTED: "true", APP_URL: base };
+  assert.ok(process.env.RESEND_API_KEY, "Set a placeholder RESEND_API_KEY so the app treats site email as configured; nothing is sent.");
   config.VENMO_VERIFIED_FINGERPRINT = destinationFingerprint(config.VENMO_HANDLE, config.VENMO_DESTINATION);
   async function restoreConfig() { for (const [key, value] of Object.entries(config)) await p.appConfig.upsert({ where: { key }, update: { value, secret: false }, create: { key, value, secret: false } }); }
   await restoreConfig();
@@ -197,17 +198,18 @@ async function main() {
   await status(await request("/api/cart", { padding: "x".repeat(70000) }), 413);
   pass("cross-origin mutations and oversized request bodies fail closed");
 
-  await p.appConfig.update({ where: { key: "SMTP_HOST" }, data: { value: "" } });
   const known = await status(await request("/api/auth/forgot-password", { email: customer.email }), 200), unknown = await status(await request("/api/auth/forgot-password", { email: "absent@example.invalid" }), 200); assert.deepEqual(await known.json(), await unknown.json());
   await status(await request("/api/auth/change-password", { currentPassword: password, password: "Changed-synthetic-password-2026" }, customerCookie), 200); await status(await request("/api/auth/change-password", { currentPassword: "Changed-synthetic-password-2026", password }, customerCookie), 401);
   const resetToken = randomUUID().replaceAll("-", "").repeat(2); await p.passwordReset.create({ data: { tokenHash: createHash("sha256").update(resetToken).digest("hex"), userId: admin.id, expiresAt: new Date(Date.now() + 60000) } });
   await status(await request("/api/auth/reset-password", { token: resetToken, password }), 200); await status(await request("/api/auth/reset-password", { token: resetToken, password }), 400); await status(await request(`/api/admin/orders/${first.id}/payment`, firstEvidence, adminCookie), 307);
-  pass("missing SMTP exposes no reset link/account; password change/reset revoke sessions; reset replay rejected");
+  pass("password reset exposes no reset link/account; password change/reset revoke sessions; reset replay rejected");
   const freshAdmin = await login(admin.email); await status(await request("/api/auth/logout", undefined, freshAdmin), 303); await status(await request(`/api/admin/orders/${first.id}/payment`, firstEvidence, freshAdmin), 307);
   pass("logout revokes replay of admin cookie");
 
+  // Simulate Resend being unconfigured for the worker: the job must stay queued and retryable.
+  delete process.env.RESEND_API_KEY;
   const pending = await p.emailJob.findFirstOrThrow({ where: { status: "PENDING" }, orderBy: { createdAt: "asc" } }); await processEmailQueue(); const queued = await p.emailJob.findUniqueOrThrow({ where: { id: pending.id } }); assert.equal(queued.status, "PENDING"); assert.equal(queued.attempts, 1); assert.ok(queued.lastError);
-  pass("missing SMTP retains retryable notification without external delivery");
+  pass("missing RESEND_API_KEY retains retryable notification without external delivery");
   console.log(`ALL ${groups} RECONSTRUCTED INTEGRATION GROUPS PASSED`);
 }
 main().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => p.$disconnect());

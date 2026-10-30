@@ -17,13 +17,16 @@ function stub(t: TestContext, target: object, key: string, implementation: (...a
   t.after(() => { Reflect.set(target, key, original); });
 }
 
+// Site email readiness comes from RESEND_API_KEY in the environment (never its value). Each test
+// file runs in its own process, so this placeholder does not leak; nothing here sends email.
+process.env.RESEND_API_KEY ||= "re_test_placeholder_not_real";
+
 function readyConfig() {
   const values: Record<string, string> = {
     VENMO_CHECKOUT_ENABLED: "true", VENMO_HANDLE: "@kneadedloaves", VENMO_DESTINATION: "https://www.venmo.com/u/kneadedloaves",
     VENMO_DESTINATION_VERIFIED: "true", PAYMENT_HOLD_MINUTES: "60", PAYMENT_WORKERS_READY: "true", CHECKOUT_SMOKE_TESTED: "true",
     APP_URL: "https://kneadedloaves.com", JWT_SECRET: "fixture-session-secret-over-32-characters",
-    SMTP_HOST: "smtp.gmail.com", SMTP_PORT: "465", SMTP_USER: "kneadedloaves@gmail.com", SMTP_PASSWORD: "fixture-app-password",
-    EMAIL_FROM: "Kneaded Loaves <kneadedloaves@gmail.com>"
+    RESEND_CONFIGURED: "true"
   };
   values.VENMO_VERIFIED_FINGERPRINT = destinationFingerprint(values.VENMO_HANDLE, values.VENMO_DESTINATION);
   return values;
