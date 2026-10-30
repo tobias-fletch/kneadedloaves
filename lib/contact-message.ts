@@ -2,6 +2,7 @@ import { createHash } from "crypto";
 import { z } from "zod";
 import { BAKERY_CONTACT_EMAIL } from "@/lib/config-messages";
 import { prisma } from "@/lib/prisma";
+import { sendErrorSummary } from "@/lib/send-error";
 
 const EASTERN_TIME = "America/New_York";
 const SITE_NAME = "kneadedloaves.com";
@@ -164,8 +165,8 @@ export async function deliverContactMessage(input: ContactMessage, deps: Contact
 
   try {
     await send("owner notification", buildOwnerNotification(input, now, { from, to: deps.notifyTo }));
-  } catch {
-    console.error("[contact] Owner notification failed to send.");
+  } catch (error) {
+    console.error(`[contact] Owner notification: Resend send failed. ${sendErrorSummary(error)}`);
     return { ok: false, reason: "notification-failed" };
   }
 
@@ -174,8 +175,8 @@ export async function deliverContactMessage(input: ContactMessage, deps: Contact
     try {
       await send("sender confirmation", buildSenderConfirmation(input, now, { from, replyTo: mailbox }));
       confirmationSent = true;
-    } catch {
-      console.error("[contact] Sender confirmation failed to send.");
+    } catch (error) {
+      console.error(`[contact] Sender confirmation: Resend send failed. ${sendErrorSummary(error)}`);
     }
   }
   return { ok: true, confirmationSent, dryRun };

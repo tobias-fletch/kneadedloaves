@@ -3,6 +3,7 @@ import nodemailer from "nodemailer";
 import { prisma } from "@/lib/prisma";
 import { getAppConfigValues } from "@/lib/app-config";
 import { EMAIL_REPLY_TO, PreviewRecipientBlockedError, RESEND_SMTP_HOST, SENDING_DOMAIN, assertPreviewRecipients, mailProvider } from "@/lib/mail-provider";
+import { sendErrorSummary } from "@/lib/send-error";
 
 export async function queueEmail(input: { dedupeKey: string; to: string; subject: string; body: string; html?: string | null }, tx: Prisma.TransactionClient = prisma) {
   return tx.emailJob.upsert({ where: { dedupeKey: input.dedupeKey }, update: {}, create: input });
@@ -124,6 +125,7 @@ export async function processEmailQueue(options?: { dedupeSuffix?: string }) {
         await prisma.emailJob.update({ where: { id: job.id }, data: { status: "FAILED", lastError: error.message, lockedUntil: null } });
         continue;
       }
+      console.error(`[email] Resend send failed for job ${job.id} (attempt ${job.attempts}). ${sendErrorSummary(error)}`);
       await prisma.emailJob.update({ where: { id: job.id }, data: { status: job.attempts >= 5 ? "FAILED" : "PENDING", lastError: "Delivery failed. Verify SMTP settings and provider logs.", availableAt: new Date(Date.now() + 60000 * 2 ** job.attempts), lockedUntil: null } });
     }
   }
