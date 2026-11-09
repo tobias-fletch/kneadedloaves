@@ -106,7 +106,7 @@ The `URL_*` variables exist only in the Production environment. Preview deployme
 
 ## 7. Data and database
 
-- PostgreSQL on Neon via the Vercel integration. Schema: `prisma/schema.prisma`; 11 migrations in `prisma/migrations/`.
+- PostgreSQL on Neon via the Vercel integration. Schema: `prisma/schema.prisma`; 12 migrations in `prisma/migrations/`.
 - **Preview database guard (PR #40, merged):** `lib/preview-database.ts` and `scripts/build.mjs`.
   - Previews read only `URL_POSTGRES_PRISMA_URL` / `URL_DATABASE_URL`, which point at the preview's own Neon branch.
   - The guard refuses any host whose fingerprint (first 10 hex characters of the sha256 of the hostname) is in the committed `PRODUCTION_DB_HOST_FINGERPRINTS` list, and also refuses the hosts in `PRODUCTION_DB_HOST` and `DATABASE_URL`. Only fingerprints are committed, never hostnames.
@@ -173,7 +173,19 @@ The `URL_*` variables exist only in the Production environment. Preview deployme
 - `netlify.toml`, `Dockerfile` and `compose.yaml` are leftovers; changing them does nothing to the live site.
 - Fractal Productions (`fractal-store`) copies this repo's store logic. A fix to shared store code should be mirrored there (see that repo's `SYNC.md`).
 
-## 13. To confirm
+## 13. Admin order corrections
+
+Text orders are ordinary `Order` rows. Nothing in the schema marks an order as "text"; the orders entered for customers who texted are the rows on the pickup windows `kl-text-window-20261108` and `kl-text-window-20261113`. Admin > Orders badges those and can filter them with `?text=1`. Quantity edits work on any order that is not cancelled or refunded, including one that is already paid or verified. Payment recording still requires an unpaid order, so a second payment is refused. Neither action changes order windows, pickup windows, product stock, or existing payment rows, and neither sends email.
+
+On `/admin/orders` an admin can:
+
+- Change a line's quantity. `PATCH /api/admin/orders/[id]/items` with `{ itemId, quantity, note? }`. Quantity must be a whole number from 1 to 1000. The order total is recalculated from that line's stored unit price plus the order's existing delivery fee. A total sent by the browser is ignored. This is allowed after the order is paid. Status, payment state, Venmo reconciliation, and any `AdminPayment` row stay as they are. If the new total differs from the amount recorded as paid, the order card and the audit row say so. Cancelled orders stay closed (their stock was released and this screen does not revive them). Refunded orders stay closed (the refund already records that the money was returned).
+- Mark one order paid. `POST /api/admin/orders/[id]/mark-paid` with `{ method, note?, providerTransactionId? }`. Method is `VENMO`, `CASH`, or `OTHER`. The recorded amount is that order's stored total. A transaction ID and an open payment deadline are not required.
+- Record one payment across several orders. `POST /api/admin/orders/payments` with `{ orderIds, amountCents, method, note?, providerTransactionId? }`. The amount must equal the sum of those orders' totals; a mismatch is rejected and nothing is marked paid. Each order is marked paid and linked to the shared `AdminPayment` row.
+
+Every quantity change and payment writes an `AdminOrderAudit` row with the admin id, email, and name when the session has them, the time, the note, and before/after values. Migration: `prisma/migrations/20261109010000_admin_order_corrections` (new tables only). The existing Reconcile Venmo form and `POST /api/admin/orders/[id]/payment` are unchanged. All three routes call the existing `requireAdmin()` check.
+
+## 14. To confirm
 
 - kl-cron Worker schedule and where its code lives (not in this repo).
 - The menu/photo freeze end date.
@@ -186,3 +198,4 @@ The `URL_*` variables exist only in the Production environment. Preview deployme
 - 2026-10-29: email is Resend only. Removed the Gmail SMTP fallback, the `SMTP_*` and `EMAIL_FROM` settings, the Setup "Check SMTP connection" button and its route; Setup now shows a Resend status. Old SMTP values in the database are ignored, not deleted.
 - 2026-10-29: real menu photos for Plain Focaccia, Artisan Bread, Bagels (6 pack) and Cookies (6 pack) in `public/menu-art/photos/` (Herbal Focaccia keeps its illustration). Focaccia and bread are cropped photos; bagels and cookies are single-item cut-outs shown whole on cream. All use responsive sizes; admins can pick them in Admin > Products. Previews show them; the live site needs the go-live database step in section 7 ("Menu photos").
 - 2026-10-30: Admin > Setup no longer shows the four unused legacy Pickup/Delivery Email Subject and Body fields, so they are never flagged "Missing" / "Not configured yet". The Email section still shows the Resend status. No change to email sending, data, schema or other settings; the keys stay valid and any saved values are kept. Also corrected section 7: preview builds do migrate (their own preview Neon branch only, never production).
+- 2026-11-09: Admin > Orders can edit line quantities and record a Venmo, cash, or other payment, including one payment applied to several orders. See section 13. Migration `20261109010000_admin_order_corrections` adds `AdminPayment`, `AdminPaymentOrder`, and `AdminOrderAudit` only. Reconcile Venmo is unchanged. These actions do not email anyone and do not change order windows. A later change the same day lets a paid order's quantity be corrected without rewriting its payment; a second payment is still refused, and a total that no longer matches the recorded payment is shown on the order and in the audit row.

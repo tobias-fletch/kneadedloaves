@@ -247,6 +247,7 @@ export function previewDatabaseUrl(env, known = PRODUCTION_DB_HOST_FINGERPRINTS)
 // (Category, Product, ProductImage), order windows, delivery zones, pickup
 // locations, events, templates, admin settings and non-secret config stay.
 export const PREVIEW_SCRUB_TABLES = Object.freeze([
+  "AdminOrderAudit", "AdminPaymentOrder", "AdminPayment",
   "OrderItem", "PaymentEvent", "EmailJob", "Order", "CartItem", "Cart", "CustomerProfile",
   "PasswordReset", "RateLimit", "EmailSubscriber", "SocialPostAsset", "SocialPost", "SocialPlatformAccount", "User"
 ]);

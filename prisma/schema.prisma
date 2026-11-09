@@ -179,6 +179,8 @@ model Order {
   stripeCheckoutSessionId String?
   receiptTokenHash       String?         @unique
   inventoryRestored      Boolean         @default(false)
+  adminPaymentLink      AdminPaymentOrder?
+  adminAudits           AdminOrderAudit[]
   user                  User?           @relation(fields: [userId], references: [id])
   deliveryZone          DeliveryZone?   @relation(fields: [deliveryZoneId], references: [id])
   pickupLocation        PickupLocation? @relation(fields: [pickupLocationId], references: [id])
@@ -423,4 +425,50 @@ model PaymentEvent {
   createdAt DateTime @default(now())
   order Order @relation(fields: [orderId], references: [id], onDelete: Restrict)
   @@index([orderId, createdAt])
+}
+
+// Admin corrections for unpaid orders (including text orders). Additive only.
+// PaymentEvent and the Venmo reconcile flow are unchanged.
+model AdminPayment {
+  id                    String              @id @default(cuid())
+  amountCents           Int
+  currency              String              @default("USD")
+  method                String
+  providerTransactionId String?             @unique
+  note                  String?
+  actorId               String
+  actorEmail            String?
+  actorName             String?
+  createdAt             DateTime            @default(now())
+  coveredOrders         AdminPaymentOrder[]
+  audits                AdminOrderAudit[]
+}
+
+model AdminPaymentOrder {
+  orderId     String       @id
+  paymentId   String
+  amountCents Int
+  payment     AdminPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([paymentId])
+}
+
+model AdminOrderAudit {
+  id         String        @id @default(cuid())
+  orderId    String
+  paymentId  String?
+  actorId    String
+  actorEmail String?
+  actorName  String?
+  action     String
+  note       String?
+  before     Json
+  after      Json
+  createdAt  DateTime      @default(now())
+  order      Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payment    AdminPayment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([orderId, createdAt])
+  @@index([paymentId])
 }
