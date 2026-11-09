@@ -25,6 +25,7 @@ Development-only sample logins from the original seed remain `admin@bakery.local
 - `npm run secrets:encrypt` migrates old saved secrets using CONFIG_ENCRYPTION_KEY.
 - `npm run backup` creates a PostgreSQL dump using pg_dump or PG_DUMP_PATH.
 - `/api/health` reports database health; `/admin/email` shows email delivery status and retries.
+- Admin > Orders can correct a line quantity and record a Venmo, cash, or other payment (one payment can cover several orders). Details are in [docs/DEVELOPER_GUIDE.md](./docs/DEVELOPER_GUIDE.md) section 13. Reconcile Venmo is unchanged.
 - Integration test instructions are in [DEPLOYMENT.md](./DEPLOYMENT.md).
 
 Development uses `.next-dev` and production builds use `.next`, avoiding cache collisions. Run only one development server per checkout. On Windows, stop the dev server before Prisma generation or a build that regenerates Prisma, because its native database driver remains locked while running.
