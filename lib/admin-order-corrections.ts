@@ -162,6 +162,7 @@ export function readSinglePayment(body: Record<string, unknown>) {
   };
 }
 
+/** Payment recording only. A paid or verified order must not get a second payment. */
 export function correctionBlockReason(order: { status: string; paymentState: string; inventoryRestored: boolean; hasRecordedPayment: boolean }) {
   if (order.hasRecordedPayment || order.paymentState === "VERIFIED" || order.status === "PAID") return "This order is already marked paid.";
   if (order.status === "CANCELLED") return "Cancelled orders stay closed and cannot be changed here.";
@@ -171,8 +172,38 @@ export function correctionBlockReason(order: { status: string; paymentState: str
   return null;
 }
 
-export function canCorrectOrder(order: { status: string; paymentState: string; inventoryRestored: boolean; adminPaymentLink?: unknown | null }) {
+/**
+ * Quantity edits are separate from payment recording. Paid and verified orders can be corrected.
+ * Cancelled orders stay closed: their stock was released and this screen does not revive them.
+ * Refunded orders stay closed: the refund already says the money was returned, and a quantity
+ * change must not rewrite that payment record.
+ */
+export function quantityEditBlockReason(order: { status: string; paymentState: string }) {
+  if (order.status === "CANCELLED") return "Cancelled orders stay closed and cannot be changed here.";
+  if (order.paymentState === "REFUNDED") return "This order was refunded and cannot be changed here.";
+  return null;
+}
+
+export function canRecordPayment(order: { status: string; paymentState: string; inventoryRestored: boolean; adminPaymentLink?: unknown | null }) {
   return correctionBlockReason({ ...order, hasRecordedPayment: Boolean(order.adminPaymentLink) }) === null;
+}
+
+export function canEditQuantity(order: { status: string; paymentState: string }) {
+  return quantityEditBlockReason(order) === null;
+}
+
+/** Amount already recorded for this order, not the shared payment's combined total. */
+export function recordedPaidCents(order: { verifiedAmountCents?: number | null; adminPaymentLink?: { amountCents: number } | null }) {
+  if (typeof order.verifiedAmountCents === "number") return order.verifiedAmountCents;
+  if (typeof order.adminPaymentLink?.amountCents === "number") return order.adminPaymentLink.amountCents;
+  return null;
+}
+
+export function paymentTotalDifference(paidCents: number | null, orderTotalCents: number) {
+  if (paidCents === null || paidCents === orderTotalCents) return null;
+  const gap = orderTotalCents - paidCents;
+  const comparison = gap > 0 ? `${formatMoney(gap)} more than the recorded payment` : `${formatMoney(Math.abs(gap))} less than the recorded payment`;
+  return `Recorded as paid ${formatMoney(paidCents)}. Order total is now ${formatMoney(orderTotalCents)}, ${comparison}. The payment record was not changed.`;
 }
 
 export function describePaymentMatch(amountCents: number | null, totals: number[]) {
@@ -190,7 +221,8 @@ export function formatAuditSnapshot(value: unknown) {
   const record = value as Record<string, unknown>;
   if (typeof record.quantity === "number" && typeof record.unitPriceCents === "number" && typeof record.lineTotalCents === "number" && typeof record.orderTotalCents === "number") {
     const name = typeof record.productName === "string" ? record.productName : "Item";
-    return `${record.quantity} × ${name} at ${formatMoney(record.unitPriceCents)} · line ${formatMoney(record.lineTotalCents)} · order total ${formatMoney(record.orderTotalCents)}`;
+    const paid = typeof record.recordedPaidCents === "number" ? paymentTotalDifference(record.recordedPaidCents, Number(record.orderTotalCents)) : null;
+    return `${record.quantity} × ${name} at ${formatMoney(record.unitPriceCents)} · line ${formatMoney(record.lineTotalCents)} · order total ${formatMoney(record.orderTotalCents)}.${paid ? ` ${paid}` : ""}`;
   }
   if (typeof record.status === "string" && typeof record.totalCents === "number") {
     const method = typeof record.paymentMethod === "string" ? paymentMethodLabel(record.paymentMethod) : "no method";

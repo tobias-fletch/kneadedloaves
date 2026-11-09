@@ -6,13 +6,16 @@ import {
   PaymentMismatchError,
   correctionBlockReason,
   orderTotalCents,
+  paymentTotalDifference,
+  quantityEditBlockReason,
   readTransactionId,
-  recalculatedOrderTotal
+  recalculatedOrderTotal,
+  recordedPaidCents
 } from "@/lib/admin-order-corrections";
 
 const orderInclude = {
   items: { orderBy: { id: "asc" as const } },
-  adminPaymentLink: { select: { orderId: true, paymentId: true } }
+  adminPaymentLink: { select: { orderId: true, paymentId: true, amountCents: true } }
 } satisfies Prisma.OrderInclude;
 
 function actorFields(actor: AdminActor) {
@@ -31,7 +34,7 @@ async function loadOrder(tx: Prisma.TransactionClient, id: string) {
   return order;
 }
 
-function assertCorrectable(order: Awaited<ReturnType<typeof loadOrder>>) {
+function assertPayable(order: Awaited<ReturnType<typeof loadOrder>>) {
   const reason = correctionBlockReason({
     status: order.status,
     paymentState: order.paymentState,
@@ -41,8 +44,13 @@ function assertCorrectable(order: Awaited<ReturnType<typeof loadOrder>>) {
   if (reason) throw new CorrectionError(reason);
 }
 
-function lineSnapshot(item: { id: string; productName: string; quantity: number; unitPriceCents: number }, orderTotal: number, deliveryFeeCents: number) {
-  return {
+function assertQuantityEditable(order: Awaited<ReturnType<typeof loadOrder>>) {
+  const reason = quantityEditBlockReason(order);
+  if (reason) throw new CorrectionError(reason);
+}
+
+function lineSnapshot(item: { id: string; productName: string; quantity: number; unitPriceCents: number }, orderTotal: number, deliveryFeeCents: number, paidCents: number | null) {
+  const snapshot = {
     itemId: item.id,
     productName: item.productName,
     quantity: item.quantity,
@@ -51,6 +59,8 @@ function lineSnapshot(item: { id: string; productName: string; quantity: number;
     orderTotalCents: orderTotal,
     deliveryFeeCents
   };
+  if (paidCents === null) return snapshot;
+  return { ...snapshot, recordedPaidCents: paidCents, paymentDifferenceCents: orderTotal - paidCents };
 }
 
 export async function changeOrderItemQuantity(tx: Prisma.TransactionClient, input: {
@@ -63,7 +73,7 @@ export async function changeOrderItemQuantity(tx: Prisma.TransactionClient, inpu
 }) {
   await lockOrder(tx, input.orderId);
   const order = await loadOrder(tx, input.orderId);
-  assertCorrectable(order);
+  assertQuantityEditable(order);
   const current = order.items.find(item => item.id === input.itemId);
   if (!current) throw new CorrectionError("That line item is not on this order.");
   if (current.quantity === input.quantity) throw new CorrectionError("That quantity is already saved.");
@@ -71,8 +81,9 @@ export async function changeOrderItemQuantity(tx: Prisma.TransactionClient, inpu
   const next = recalculatedOrderTotal(priced, input.itemId, input.quantity, order.deliveryFeeCents);
   const saved = next.items.find(item => item.id === current.id);
   if (!saved) throw new CorrectionError("That line item is not on this order.");
-  const before = lineSnapshot(current, order.totalCents, order.deliveryFeeCents);
-  const after = lineSnapshot({ ...current, quantity: saved.quantity }, next.totalCents, order.deliveryFeeCents);
+  const paidCents = recordedPaidCents(order);
+  const before = lineSnapshot(current, order.totalCents, order.deliveryFeeCents, paidCents);
+  const after = lineSnapshot({ ...current, quantity: saved.quantity }, next.totalCents, order.deliveryFeeCents, paidCents);
   await tx.orderItem.update({ where: { id: current.id }, data: { quantity: saved.quantity } });
   await tx.order.update({ where: { id: order.id }, data: { totalCents: next.totalCents } });
   const audit = await tx.adminOrderAudit.create({
@@ -86,7 +97,7 @@ export async function changeOrderItemQuantity(tx: Prisma.TransactionClient, inpu
       ...actorFields(input.actor)
     }
   });
-  return { orderId: order.id, itemId: current.id, quantity: saved.quantity, unitPriceCents: current.unitPriceCents, totalCents: next.totalCents, auditId: audit.id };
+  return { orderId: order.id, itemId: current.id, quantity: saved.quantity, unitPriceCents: current.unitPriceCents, totalCents: next.totalCents, recordedPaidCents: paidCents, paymentNote: paymentTotalDifference(paidCents, next.totalCents), auditId: audit.id };
 }
 
 export async function recordAdminPayment(tx: Prisma.TransactionClient, input: {
@@ -103,7 +114,7 @@ export async function recordAdminPayment(tx: Prisma.TransactionClient, input: {
   const orders = [];
   for (const id of orderIds) orders.push(await loadOrder(tx, id));
   for (const order of orders) {
-    assertCorrectable(order);
+    assertPayable(order);
     const computed = orderTotalCents(order.items, order.deliveryFeeCents);
     if (computed !== order.totalCents) throw new CorrectionError("This order total does not match its line items. Save the line quantities before recording a payment.");
   }

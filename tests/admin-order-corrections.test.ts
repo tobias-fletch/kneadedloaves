@@ -14,8 +14,10 @@ import { SESSION_COOKIE, signSession } from "../lib/auth";
 import { OrderCorrectionForms, SharedPaymentForm } from "../components/AdminOrderCorrections";
 import {
   PaymentMismatchError,
-  canCorrectOrder,
+  canEditQuantity,
+  canRecordPayment,
   describePaymentMatch,
+  formatAuditSnapshot,
   parseDollarToCents,
   parseLineQuantity,
   readQuantityChange,
@@ -41,7 +43,7 @@ type Item = { id: string; orderId: string; productId: string | null; productName
 type FakeOrder = {
   id: string; status: string; paymentState: string; paymentMethod: string | null; totalCents: number; deliveryFeeCents: number;
   currency: string; verifiedAmountCents: number | null; inventoryRestored: boolean; providerTransactionId: string | null;
-  paymentDueAt: Date | null; orderWindowId: string | null; items: Item[]; adminPaymentLink: { orderId: string; paymentId: string } | null;
+  paymentDueAt: Date | null; orderWindowId: string | null; items: Item[]; adminPaymentLink: { orderId: string; paymentId: string; amountCents: number } | null;
 };
 type Bag = { audits: Record<string, unknown>[]; payments: Record<string, unknown>[]; links: Record<string, unknown>[]; orderUpdates: { id: string; data: Record<string, unknown> }[]; itemUpdates: { id: string; data: Record<string, unknown> }[]; emails: number };
 
@@ -91,7 +93,7 @@ function memory(orders: FakeOrder[], knownEvents: string[] = []) {
       create: async ({ data }: { data: { orderId: string; paymentId: string; amountCents: number } }) => {
         bag.links.push(data);
         const order = orders.find(item => item.id === data.orderId);
-        if (order) order.adminPaymentLink = { orderId: data.orderId, paymentId: data.paymentId };
+        if (order) order.adminPaymentLink = { orderId: data.orderId, paymentId: data.paymentId, amountCents: data.amountCents };
         return data;
       }
     },
@@ -225,8 +227,79 @@ test("text orders: quantity fix, rejected mismatched payment, then one payment c
     assert.equal((row.after as { paymentAmountCents: number }).paymentAmountCents, 4000);
   }
   assert.equal(db.bag.emails, 0);
-  assert.equal(canCorrectOrder(first), false);
+  assert.equal(canRecordPayment(first), false);
+  assert.equal(canEditQuantity(first), true);
   await assert.rejects(recordAdminPayment(db.tx, { orderIds: [first.id], amountCents: null, method: "CASH", note: null, providerTransactionId: null, actor, now }), /already marked paid/);
+});
+
+test("a paid text order can change quantity without rewriting its payment", async () => {
+  const order = textOrder("order-a", "kl-text-window-20261108", 1, 1000);
+  order.status = "PAID";
+  order.paymentState = "VERIFIED";
+  order.paymentMethod = "VENMO";
+  order.verifiedAmountCents = 1000;
+  order.providerTransactionId = null;
+  order.adminPaymentLink = { orderId: order.id, paymentId: "pay-existing", amountCents: 1000 };
+  const db = memory([order]);
+  const existingPayment = { id: "pay-existing", amountCents: 4000, providerTransactionId: "VENMO40", note: "one Venmo for both pickups" };
+  db.bag.payments.push(existingPayment);
+  db.bag.links.push({ orderId: order.id, paymentId: "pay-existing", amountCents: 1000 });
+  const saved = await changeOrderItemQuantity(db.tx, { orderId: order.id, itemId: "order-a-item", quantity: 2, note: "actually 2 loaves", actor, now });
+  assert.equal(saved.totalCents, 2000);
+  assert.equal(saved.recordedPaidCents, 1000);
+  assert.match(saved.paymentNote ?? "", /Recorded as paid \$10\.00/);
+  assert.match(saved.paymentNote ?? "", /\$20\.00/);
+  assert.match(saved.paymentNote ?? "", /not changed/);
+  assert.equal(order.status, "PAID");
+  assert.equal(order.paymentState, "VERIFIED");
+  assert.equal(order.paymentMethod, "VENMO");
+  assert.equal(order.verifiedAmountCents, 1000);
+  assert.equal(order.providerTransactionId, null);
+  assert.equal(order.totalCents, 2000);
+  assert.equal(order.items[0].quantity, 2);
+  assert.equal(order.items[0].unitPriceCents, 1000);
+  assert.deepEqual(order.adminPaymentLink, { orderId: order.id, paymentId: "pay-existing", amountCents: 1000 });
+  assert.deepEqual(db.bag.payments, [existingPayment]);
+  assert.deepEqual(db.bag.links, [{ orderId: order.id, paymentId: "pay-existing", amountCents: 1000 }]);
+  assert.deepEqual(db.bag.orderUpdates.map(update => update.data), [{ totalCents: 2000 }]);
+  assert.deepEqual(db.bag.itemUpdates.map(update => update.data), [{ quantity: 2 }]);
+  assert.equal(db.bag.audits.length, 1);
+  const audit = db.bag.audits[0];
+  assert.equal(audit.action, "QUANTITY_CHANGED");
+  assert.equal(audit.actorId, actor.id);
+  assert.equal(audit.actorEmail, actor.email);
+  assert.equal(audit.note, "actually 2 loaves");
+  assert.equal((audit.createdAt as Date).toISOString(), now.toISOString());
+  assert.equal(audit.paymentId, undefined);
+  assert.equal((audit.before as { recordedPaidCents: number; orderTotalCents: number; paymentDifferenceCents: number }).recordedPaidCents, 1000);
+  assert.equal((audit.before as { orderTotalCents: number }).orderTotalCents, 1000);
+  assert.equal((audit.before as { paymentDifferenceCents: number }).paymentDifferenceCents, 0);
+  assert.equal((audit.after as { recordedPaidCents: number }).recordedPaidCents, 1000);
+  assert.equal((audit.after as { orderTotalCents: number }).orderTotalCents, 2000);
+  assert.equal((audit.after as { paymentDifferenceCents: number }).paymentDifferenceCents, 1000);
+  assert.match(formatAuditSnapshot(audit.after), /Recorded as paid \$10\.00/);
+  assert.match(formatAuditSnapshot(audit.after), /\$20\.00/);
+  assert.match(formatAuditSnapshot(audit.after), /not changed/);
+  assert.equal(order.orderWindowId, "kl-text-window-20261108");
+  assert.equal(db.bag.emails, 0);
+  await assert.rejects(recordAdminPayment(db.tx, { orderIds: [order.id], amountCents: 2000, method: "CASH", note: "second payment", providerTransactionId: null, actor, now }), /already marked paid/);
+  assert.equal(db.bag.audits.length, 1);
+  assert.deepEqual(db.bag.payments, [existingPayment]);
+  assert.equal(order.status, "PAID");
+  assert.equal(order.verifiedAmountCents, 1000);
+  assert.equal(order.paymentState, "VERIFIED");
+  const cancelled = textOrder("order-b", "kl-text-window-20261113");
+  cancelled.status = "CANCELLED";
+  const refunded = textOrder("order-c", "kl-text-window-20261113", 1, 1000);
+  refunded.status = "PAID";
+  refunded.paymentState = "REFUNDED";
+  refunded.verifiedAmountCents = 1000;
+  const blocked = memory([cancelled, refunded]);
+  await assert.rejects(changeOrderItemQuantity(blocked.tx, { orderId: cancelled.id, itemId: "order-b-item", quantity: 2, note: null, actor, now }), /stay closed/);
+  await assert.rejects(changeOrderItemQuantity(blocked.tx, { orderId: refunded.id, itemId: "order-c-item", quantity: 2, note: null, actor, now }), /refunded/);
+  assert.equal(blocked.bag.audits.length, 0);
+  assert.equal(cancelled.status, "CANCELLED");
+  assert.equal(refunded.paymentState, "REFUNDED");
 });
 
 test("cash payment without a transaction id marks one past-deadline order paid", async () => {
@@ -308,7 +381,8 @@ test("admin routes ignore a client total and record the admin identity", async t
 });
 
 test("admin order forms do not ask for a deadline or a required transaction id", () => {
-  const single = renderToStaticMarkup(createElement(AppRouterContext.Provider, { value: router }, createElement(OrderCorrectionForms, { orderId: "order-a", currency: "USD", totalCents: 2000, deliveryFeeCents: 0, items: [{ id: "order-a-item", productName: "Plain Focaccia", quantity: 2, unitPriceCents: 1000 }] })));
+  const single = renderToStaticMarkup(createElement(AppRouterContext.Provider, { value: router }, createElement(OrderCorrectionForms, { orderId: "order-a", currency: "USD", totalCents: 2000, deliveryFeeCents: 0, recordedPaidCents: null, allowMarkPaid: true, items: [{ id: "order-a-item", productName: "Plain Focaccia", quantity: 2, unitPriceCents: 1000 }] })));
+  const paid = renderToStaticMarkup(createElement(AppRouterContext.Provider, { value: router }, createElement(OrderCorrectionForms, { orderId: "order-a", currency: "USD", totalCents: 2000, deliveryFeeCents: 0, recordedPaidCents: 1000, allowMarkPaid: false, items: [{ id: "order-a-item", productName: "Plain Focaccia", quantity: 2, unitPriceCents: 1000 }] })));
   const shared = renderToStaticMarkup(createElement(AppRouterContext.Provider, { value: router }, createElement(SharedPaymentForm, { orders: [{ id: "order-a", customerName: "Sam", totalCents: 2000, currency: "USD", summary: "2 × Plain Focaccia", textOrder: true }, { id: "order-b", customerName: "Sam", totalCents: 2000, currency: "USD", summary: "2 × Plain Focaccia", textOrder: true }] })));
   for (const html of [single, shared]) {
     const txn = html.match(/<input[^>]*name="providerTransactionId"[^>]*>/g) ?? [];
@@ -320,8 +394,13 @@ test("admin order forms do not ask for a deadline or a required transaction id",
     assert.match(html, /Other/);
   }
   assert.match(single, /Save quantity/);
-  assert.match(single, /does not change product stock/);
+  assert.match(single, /does not change a recorded payment/);
   assert.doesNotMatch(single, /name="amount"/);
+  assert.match(paid, /Save quantity/);
+  assert.match(paid, /Recorded as paid \$10\.00/);
+  assert.match(paid, /\$20\.00/);
+  assert.match(paid, /not changed/);
+  assert.doesNotMatch(paid, /Mark this order paid/);
   assert.match(shared, /name="amount"/);
   assert.match(shared, /Text order/);
   assert.match(shared, /Select at least two orders/);

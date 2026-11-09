@@ -8,6 +8,7 @@ import {
   MAX_LINE_QUANTITY,
   describePaymentMatch,
   parseDollarToCents,
+  paymentTotalDifference,
   recalculatedOrderTotal
 } from "@/lib/admin-order-corrections";
 
@@ -21,7 +22,7 @@ async function postJson(url: string, method: "POST" | "PATCH", payload: object) 
   return body;
 }
 
-export function OrderCorrectionForms(props: { orderId: string; currency: string; totalCents: number; deliveryFeeCents: number; items: Item[] }) {
+export function OrderCorrectionForms(props: { orderId: string; currency: string; totalCents: number; deliveryFeeCents: number; items: Item[]; recordedPaidCents: number | null; allowMarkPaid: boolean }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [saved, setSaved] = useState(false);
@@ -40,7 +41,9 @@ export function OrderCorrectionForms(props: { orderId: string; currency: string;
     try {
       const result = await postJson(`/api/admin/orders/${props.orderId}/items`, "PATCH", { itemId, quantity, note });
       setSaved(true);
-      setMessage(`Quantity saved. Order total is now ${formatMoney(result.totalCents)}. The customer was not emailed, and product stock was not changed.`);
+      const savedTotal = typeof result.totalCents === "number" ? formatMoney(result.totalCents) : formatMoney(props.totalCents);
+      const difference = typeof result.paymentNote === "string" && result.paymentNote ? `${result.paymentNote} ` : `Order total is now ${savedTotal}. `;
+      setMessage(`Quantity saved. ${difference}The customer was not emailed, product stock was not changed, and the payment record was left as it is.`);
       router.refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not save this change.");
@@ -77,14 +80,17 @@ export function OrderCorrectionForms(props: { orderId: string; currency: string;
   return <div className="mt-3 space-y-3 border-t-2 border-ink/20 pt-3 print:hidden">
     <div className="border-2 border-ink bg-crumb p-3">
       <h3 className="font-black uppercase tracking-wide">Edit quantity</h3>
-      <p className="mt-1 text-sm">The order total is recalculated from each item&apos;s saved unit price. This does not change product stock or email the customer.</p>
+      <p className="mt-1 text-sm">The order total is recalculated from each item&apos;s saved unit price. Saving does not change a recorded payment, product stock, or email the customer.</p>
       {props.items.map(item => {
         const draft = drafts[item.id] ?? String(item.quantity);
         const quantity = Number(draft);
         let preview = "";
         if (Number.isInteger(quantity)) {
-          try { preview = `New order total ${formatMoney(recalculatedOrderTotal(props.items, item.id, quantity, props.deliveryFeeCents).totalCents)}.`; }
-          catch { preview = ""; }
+          try {
+            const nextTotal = recalculatedOrderTotal(props.items, item.id, quantity, props.deliveryFeeCents).totalCents;
+            const difference = paymentTotalDifference(props.recordedPaidCents, nextTotal);
+            preview = difference ?? `New order total ${formatMoney(nextTotal)}.`;
+          } catch { preview = ""; }
         }
         return <form key={item.id} onSubmit={event => { void saveQuantity(event, item.id); }} className="mt-3 space-y-3">
           <fieldset disabled={busy || saved} className="space-y-3 disabled:opacity-60">
@@ -98,7 +104,7 @@ export function OrderCorrectionForms(props: { orderId: string; currency: string;
         </form>;
       })}
     </div>
-    <form onSubmit={event => { void markPaid(event); }} className="border-2 border-ink bg-crumb p-3">
+    {props.allowMarkPaid ? <form onSubmit={event => { void markPaid(event); }} className="border-2 border-ink bg-crumb p-3">
       <h3 className="font-black uppercase tracking-wide">Mark this order paid</h3>
       <p className="mt-1 text-sm">Records {formatMoney(props.totalCents)} {props.currency} as paid. A transaction ID and an open payment deadline are not required. The customer is not emailed, and the Reconcile Venmo form is unchanged.</p>
       <fieldset disabled={busy || saved} className="mt-3 space-y-3 disabled:opacity-60">
@@ -109,7 +115,7 @@ export function OrderCorrectionForms(props: { orderId: string; currency: string;
         <label className="block">Note (optional)<input name="note" type="text" maxLength={1000} autoComplete="off" /></label>
         <button className="btn-primary" type="submit">{busy ? "Saving..." : `Mark paid · ${formatMoney(props.totalCents)}`}</button>
       </fieldset>
-    </form>
+    </form> : null}
     {message ? <p role={saved ? "status" : "alert"} aria-live="polite" className="border-2 border-ink bg-page p-3 text-sm font-bold">{message}</p> : null}
   </div>;
 }
