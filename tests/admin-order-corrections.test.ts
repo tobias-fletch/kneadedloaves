@@ -29,6 +29,7 @@ import {
   toPublicCorrectionError
 } from "../lib/admin-order-corrections";
 import { changeOrderItemQuantity, recordAdminPayment, recordAdminTopUp } from "../lib/admin-order-corrections-db";
+import { recordPaymentEvidence } from "../lib/manual-payments";
 import { PATCH as patchQuantity } from "../app/api/admin/orders/[id]/items/route";
 import { POST as markPaid } from "../app/api/admin/orders/[id]/mark-paid/route";
 import { POST as recordPayments } from "../app/api/admin/orders/payments/route";
@@ -483,6 +484,78 @@ test("Venmo reconcile still requires a transaction id and a top-up does not emai
   assert.match(topUpRoute, /readTopUpPayment/);
   assert.doesNotMatch(topUpRoute, /queueEmail|renderOrderEmail|restoreInventory|inventoryLimit/);
   assert.doesNotMatch(topUpDb.slice(topUpDb.indexOf("export async function recordAdminTopUp")), /queueEmail|renderOrderEmail|restoreInventory|inventoryLimit|status: "PAID"|paymentState: "VERIFIED"/);
+});
+
+test("reconcile cannot reuse a top-up transaction id, and a refund counts the top-up", async () => {
+  const receivedAt = "2026-11-14T15:00:00.000Z";
+  const checkedAt = new Date("2026-11-15T12:00:00Z");
+  type EvidenceOrder = {
+    id: string; status: string; paymentMethod: string; paymentState: string; paymentDueAt: Date; paymentReviewRequestedAt: null;
+    inventoryRestored: boolean; providerTransactionId: string | null; totalCents: number; currency: string; createdAt: Date; customerEmail: string;
+    items: []; paymentEvents: { id?: string; orderId: string; type: string; amountCents: number; currency: string; providerTransactionId: string; receivedAt: Date; restock: boolean }[];
+    adminPaymentTopUps: { amountCents: number; payment: { currency: string; amountCents: number } }[];
+  };
+  function paidOrder(): EvidenceOrder {
+    return {
+      id: "order-paid", status: "COMPLETED", paymentMethod: "VENMO", paymentState: "VERIFIED", paymentDueAt: new Date("2026-12-01T00:00:00Z"), paymentReviewRequestedAt: null,
+      inventoryRestored: false, providerTransactionId: "VENMO20", totalCents: 4000, currency: "USD", createdAt: new Date("2026-11-01T00:00:00Z"), customerEmail: "guest@example.com", items: [],
+      paymentEvents: [{ orderId: "order-paid", type: "VERIFIED", amountCents: 2000, currency: "USD", providerTransactionId: "VENMO20", receivedAt: new Date(receivedAt), restock: false }],
+      adminPaymentTopUps: [{ amountCents: 2000, payment: { currency: "USD", amountCents: 2000 } }]
+    };
+  }
+  function harness(order: EvidenceOrder, adminTxn: string | null) {
+    const emails: string[] = [];
+    const events: Record<string, unknown>[] = [];
+    const locks: string[] = [];
+    const tx = {
+      $executeRaw: async (_query: TemplateStringsArray, value?: unknown) => { locks.push(String(value ?? "")); return 1; },
+      order: {
+        findUniqueOrThrow: async () => structuredClone(order),
+        findUnique: async ({ where }: { where: { providerTransactionId?: string } }) => where.providerTransactionId && where.providerTransactionId === order.providerTransactionId ? { id: order.id } : null,
+        update: async ({ data }: { data: Record<string, unknown> }) => { Object.assign(order, data); return order; }
+      },
+      paymentEvent: {
+        findUnique: async ({ where }: { where: { providerTransactionId: string } }) => order.paymentEvents.find(event => event.providerTransactionId === where.providerTransactionId) ?? null,
+        create: async ({ data }: { data: EvidenceOrder["paymentEvents"][number] }) => { events.push(data); order.paymentEvents.push(data); return data; }
+      },
+      adminPayment: { findUnique: async ({ where }: { where: { providerTransactionId: string } }) => where.providerTransactionId === adminTxn ? { id: "pay-top" } : null },
+      emailJob: { upsert: async () => { emails.push("sent"); throw new Error("email"); } },
+      product: { update: async () => { throw new Error("stock"); } }
+    };
+    return { tx: tx as unknown as Prisma.TransactionClient, emails, events, locks };
+  }
+  const pending: EvidenceOrder = {
+    id: "order-new", status: "PENDING", paymentMethod: "VENMO", paymentState: "UNPAID", paymentDueAt: new Date("2026-12-01T00:00:00Z"), paymentReviewRequestedAt: null,
+    inventoryRestored: false, providerTransactionId: null, totalCents: 2000, currency: "USD", createdAt: new Date("2026-11-01T00:00:00Z"), customerEmail: "guest@example.com", items: [],
+    paymentEvents: [], adminPaymentTopUps: []
+  };
+  const blocked = harness(pending, "TOPUP20");
+  await assert.rejects(recordPaymentEvidence(blocked.tx, pending.id, { action: "verify", amountCents: 2000, currency: "USD", providerTransactionId: "topup20", receivedAt, attested: true }, "admin-1", checkedAt), /already recorded/);
+  assert.equal(blocked.events.length, 0);
+  assert.equal(blocked.emails.length, 0);
+  assert.equal(pending.status, "PENDING");
+  assert.equal(pending.paymentState, "UNPAID");
+  assert.ok(blocked.locks.includes("order:order-new"));
+  assert.ok(blocked.locks.includes("txn:TOPUP20"));
+  const partialOrder = paidOrder();
+  const partial = harness(partialOrder, "TOPUP20");
+  const refund = { action: "refund" as const, currency: "USD", receivedAt, attested: true as const, note: "sent back in Venmo", restock: false };
+  await assert.rejects(recordPaymentEvidence(partial.tx, partialOrder.id, { ...refund, amountCents: 4001, providerTransactionId: "refund-over" }, "admin-1", checkedAt), /Refund exceeds/);
+  assert.equal(partialOrder.paymentState, "VERIFIED");
+  await recordPaymentEvidence(partial.tx, partialOrder.id, { ...refund, amountCents: 2000, providerTransactionId: "refund-20" }, "admin-1", checkedAt);
+  assert.equal(partialOrder.paymentState, "REVIEW");
+  assert.equal(partialOrder.status, "COMPLETED");
+  assert.equal(partial.emails.length, 0);
+  const fullOrder = paidOrder();
+  const full = harness(fullOrder, "TOPUP20");
+  await recordPaymentEvidence(full.tx, fullOrder.id, { ...refund, amountCents: 4000, providerTransactionId: "refund-40", note: "all of it" }, "admin-1", checkedAt);
+  assert.equal(fullOrder.paymentState, "REFUNDED");
+  assert.equal(fullOrder.status, "COMPLETED");
+  assert.equal(full.events.length, 1);
+  assert.equal(full.emails.length, 0);
+  await recordPaymentEvidence(full.tx, fullOrder.id, { ...refund, amountCents: 4000, providerTransactionId: "refund-40", note: "all of it" }, "admin-1", checkedAt);
+  assert.equal(full.events.length, 1);
+  assert.equal(fullOrder.paymentState, "REFUNDED");
 });
 
 test("unauthenticated and non-admin requests are rejected before any write", async t => {

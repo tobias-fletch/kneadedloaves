@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import { recordedProviderTransaction } from "@/lib/manual-payments";
 import {
   type AdminActor,
   type AdminPaymentMethod,
@@ -38,10 +39,8 @@ async function loadOrder(tx: Prisma.TransactionClient, id: string) {
 
 async function assertTransactionAvailable(tx: Prisma.TransactionClient, txn: string | null) {
   if (!txn) return;
-  const recorded = await tx.adminPayment.findUnique({ where: { providerTransactionId: txn }, select: { id: true } });
-  const event = await tx.paymentEvent.findUnique({ where: { providerTransactionId: txn }, select: { id: true } });
-  const existingOrder = await tx.order.findUnique({ where: { providerTransactionId: txn }, select: { id: true } });
-  if (recorded || event || existingOrder) throw new CorrectionError("That transaction ID is already recorded.");
+  const recorded = await recordedProviderTransaction(tx, txn);
+  if (recorded.adminPayment || recorded.paymentEvent || recorded.order) throw new CorrectionError("That transaction ID is already recorded.");
 }
 
 function assertPayable(order: Awaited<ReturnType<typeof loadOrder>>) {
