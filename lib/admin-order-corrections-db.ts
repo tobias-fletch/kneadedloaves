@@ -1,16 +1,19 @@
 import type { Prisma } from "@prisma/client";
+import { recordedProviderTransaction } from "@/lib/manual-payments";
 import {
   type AdminActor,
   type AdminPaymentMethod,
   CorrectionError,
   PaymentMismatchError,
+  MAX_AMOUNT_CENTS,
   correctionBlockReason,
   orderTotalCents,
   paymentTotalDifference,
   quantityEditBlockReason,
   readTransactionId,
   recalculatedOrderTotal,
-  recordedPaidCents
+  recordedPaidCents,
+  topUpBlockReason
 } from "@/lib/admin-order-corrections";
 
 const orderInclude = {
@@ -32,6 +35,12 @@ async function loadOrder(tx: Prisma.TransactionClient, id: string) {
   const order = await tx.order.findUnique({ where: { id }, include: orderInclude });
   if (!order) throw new CorrectionError("That order was not found.");
   return order;
+}
+
+async function assertTransactionAvailable(tx: Prisma.TransactionClient, txn: string | null) {
+  if (!txn) return;
+  const recorded = await recordedProviderTransaction(tx, txn);
+  if (recorded.adminPayment || recorded.paymentEvent || recorded.order) throw new CorrectionError("That transaction ID is already recorded.");
 }
 
 function assertPayable(order: Awaited<ReturnType<typeof loadOrder>>) {
@@ -128,12 +137,7 @@ export async function recordAdminPayment(tx: Prisma.TransactionClient, input: {
     throw new PaymentMismatchError(input.amountCents, expectedCents);
   }
   const txn = readTransactionId(input.providerTransactionId);
-  if (txn) {
-    const recorded = await tx.adminPayment.findUnique({ where: { providerTransactionId: txn }, select: { id: true } });
-    const event = await tx.paymentEvent.findUnique({ where: { providerTransactionId: txn }, select: { id: true } });
-    const existingOrder = await tx.order.findUnique({ where: { providerTransactionId: txn }, select: { id: true } });
-    if (recorded || event || existingOrder) throw new CorrectionError("That transaction ID is already recorded.");
-  }
+  await assertTransactionAvailable(tx, txn);
   const currency = orders[0].currency || "USD";
   const payment = await tx.adminPayment.create({
     data: {
@@ -192,4 +196,94 @@ export async function recordAdminPayment(tx: Prisma.TransactionClient, input: {
     auditIds.push(audit.id);
   }
   return { paymentId: payment.id, orderIds, amountCents: expectedCents, currency, method: input.method, auditIds };
+}
+
+export async function recordAdminTopUp(tx: Prisma.TransactionClient, input: {
+  orderId: string;
+  amountCents: number;
+  method: AdminPaymentMethod;
+  note: string;
+  providerTransactionId: string | null;
+  actor: AdminActor;
+  now: Date;
+}) {
+  const note = input.note.trim();
+  if (!note) throw new CorrectionError("A note is required for a top-up payment.");
+  if (note.length > 1000) throw new CorrectionError("Notes cannot be longer than 1000 characters.");
+  await lockOrder(tx, input.orderId);
+  const order = await loadOrder(tx, input.orderId);
+  const reason = topUpBlockReason(order);
+  if (reason) throw new CorrectionError(reason);
+  const computed = orderTotalCents(order.items, order.deliveryFeeCents);
+  if (computed !== order.totalCents) throw new CorrectionError("This order total does not match its line items. Save the line quantities before recording a payment.");
+  const beforePaid = recordedPaidCents(order);
+  if (beforePaid === null) throw new CorrectionError("Record the first payment before adding a top-up.");
+  const amountCents = input.amountCents;
+  if (!Number.isSafeInteger(amountCents) || amountCents <= 0 || amountCents > MAX_AMOUNT_CENTS) {
+    throw new CorrectionError("Enter the payment amount in cents as a positive whole number.");
+  }
+  const paidAfter = beforePaid + amountCents;
+  if (!Number.isSafeInteger(paidAfter) || paidAfter > MAX_AMOUNT_CENTS) throw new CorrectionError("That top-up would make the recorded paid total too large.");
+  const txn = readTransactionId(input.providerTransactionId);
+  await assertTransactionAvailable(tx, txn);
+  const currency = order.currency || "USD";
+  const payment = await tx.adminPayment.create({
+    data: {
+      amountCents,
+      currency,
+      method: input.method,
+      providerTransactionId: txn,
+      note,
+      createdAt: input.now,
+      ...actorFields(input.actor)
+    }
+  });
+  await tx.adminPaymentTopUp.create({
+    data: { orderId: order.id, paymentId: payment.id, amountCents, createdAt: input.now }
+  });
+  await tx.order.update({ where: { id: order.id }, data: { verifiedAmountCents: paidAfter } });
+  const balance = (cents: number) => order.totalCents - cents;
+  const audit = await tx.adminOrderAudit.create({
+    data: {
+      orderId: order.id,
+      paymentId: payment.id,
+      action: "PAYMENT_TOP_UP",
+      note,
+      createdAt: input.now,
+      before: {
+        topUp: true,
+        status: order.status,
+        paymentState: order.paymentState,
+        paymentMethod: order.paymentMethod,
+        recordedPaidCents: beforePaid,
+        orderTotalCents: order.totalCents,
+        verifiedAmountCents: order.verifiedAmountCents
+      },
+      after: {
+        topUp: true,
+        status: order.status,
+        paymentState: order.paymentState,
+        paymentMethod: order.paymentMethod,
+        recordedPaidCents: paidAfter,
+        orderTotalCents: order.totalCents,
+        verifiedAmountCents: paidAfter,
+        balanceCents: balance(paidAfter),
+        topUpAmountCents: amountCents,
+        method: input.method,
+        paymentId: payment.id,
+        providerTransactionId: txn
+      },
+      ...actorFields(input.actor)
+    }
+  });
+  return {
+    paymentId: payment.id,
+    orderId: order.id,
+    amountCents,
+    currency,
+    method: input.method,
+    recordedPaidCents: paidAfter,
+    balanceCents: balance(paidAfter),
+    auditId: audit.id
+  };
 }

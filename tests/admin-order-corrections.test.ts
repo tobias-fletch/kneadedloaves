@@ -12,23 +12,28 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { SESSION_COOKIE, signSession } from "../lib/auth";
 import { OrderCorrectionForms, SharedPaymentForm } from "../components/AdminOrderCorrections";
+import { paymentEvidenceSchema } from "../lib/manual-payments";
 import {
   PaymentMismatchError,
   canEditQuantity,
   canRecordPayment,
+  canRecordTopUp,
   describePaymentMatch,
   formatAuditSnapshot,
   parseDollarToCents,
   parseLineQuantity,
   readQuantityChange,
   readSharedPayment,
+  readTopUpPayment,
   recalculatedOrderTotal,
   toPublicCorrectionError
 } from "../lib/admin-order-corrections";
-import { changeOrderItemQuantity, recordAdminPayment } from "../lib/admin-order-corrections-db";
+import { changeOrderItemQuantity, recordAdminPayment, recordAdminTopUp } from "../lib/admin-order-corrections-db";
+import { recordPaymentEvidence } from "../lib/manual-payments";
 import { PATCH as patchQuantity } from "../app/api/admin/orders/[id]/items/route";
 import { POST as markPaid } from "../app/api/admin/orders/[id]/mark-paid/route";
 import { POST as recordPayments } from "../app/api/admin/orders/payments/route";
+import { POST as recordTopUp } from "../app/api/admin/orders/[id]/top-up/route";
 
 const now = new Date("2026-11-09T15:00:00Z");
 const actor = { id: "admin-1", email: "admin@bakery.local", name: "Toby" };
@@ -36,7 +41,8 @@ const router: AppRouterInstance = { back() {}, forward() {}, refresh() {}, push(
 const routes = [
   ["PATCH", patchQuantity, "/api/admin/orders/order-a/items", { itemId: "order-a-item", quantity: 2 }],
   ["POST", markPaid, "/api/admin/orders/order-a/mark-paid", { method: "CASH" }],
-  ["POST", recordPayments, "/api/admin/orders/payments", { orderIds: ["order-a", "order-b"], amountCents: 4000, method: "VENMO" }]
+  ["POST", recordPayments, "/api/admin/orders/payments", { orderIds: ["order-a", "order-b"], amountCents: 4000, method: "VENMO" }],
+  ["POST", recordTopUp, "/api/admin/orders/order-a/top-up", { amountCents: 2000, method: "CASH", note: "rest paid in cash" }]
 ] as const;
 
 type Item = { id: string; orderId: string; productId: string | null; productName: string; quantity: number; unitPriceCents: number };
@@ -44,19 +50,20 @@ type FakeOrder = {
   id: string; status: string; paymentState: string; paymentMethod: string | null; totalCents: number; deliveryFeeCents: number;
   currency: string; verifiedAmountCents: number | null; inventoryRestored: boolean; providerTransactionId: string | null;
   paymentDueAt: Date | null; orderWindowId: string | null; items: Item[]; adminPaymentLink: { orderId: string; paymentId: string; amountCents: number } | null;
+  adminPaymentTopUps: { id: string; orderId: string; paymentId: string; amountCents: number }[];
 };
-type Bag = { audits: Record<string, unknown>[]; payments: Record<string, unknown>[]; links: Record<string, unknown>[]; orderUpdates: { id: string; data: Record<string, unknown> }[]; itemUpdates: { id: string; data: Record<string, unknown> }[]; emails: number };
+type Bag = { audits: Record<string, unknown>[]; payments: Record<string, unknown>[]; links: Record<string, unknown>[]; topUps: Record<string, unknown>[]; orderUpdates: { id: string; data: Record<string, unknown> }[]; itemUpdates: { id: string; data: Record<string, unknown> }[]; emails: number };
 
 function textOrder(id: string, windowId: string, quantity = 1, totalCents = quantity * 1000): FakeOrder {
   return {
     id, status: "PENDING", paymentState: "UNPAID", paymentMethod: null, totalCents, deliveryFeeCents: 0, currency: "USD",
     verifiedAmountCents: null, inventoryRestored: false, providerTransactionId: null, paymentDueAt: new Date("2026-11-01T00:00:00Z"),
-    orderWindowId: windowId, adminPaymentLink: null,
+    orderWindowId: windowId, adminPaymentLink: null, adminPaymentTopUps: [],
     items: [{ id: `${id}-item`, orderId: id, productId: "plain-focaccia", productName: "Plain Focaccia", quantity, unitPriceCents: 1000 }]
   };
 }
 function memory(orders: FakeOrder[], knownEvents: string[] = []) {
-  const bag: Bag = { audits: [], payments: [], links: [], orderUpdates: [], itemUpdates: [], emails: 0 };
+  const bag: Bag = { audits: [], payments: [], links: [], topUps: [], orderUpdates: [], itemUpdates: [], emails: 0 };
   const tx = {
     $executeRaw: async () => 1,
     order: {
@@ -95,6 +102,15 @@ function memory(orders: FakeOrder[], knownEvents: string[] = []) {
         const order = orders.find(item => item.id === data.orderId);
         if (order) order.adminPaymentLink = { orderId: data.orderId, paymentId: data.paymentId, amountCents: data.amountCents };
         return data;
+      }
+    },
+    adminPaymentTopUp: {
+      create: async ({ data }: { data: { orderId: string; paymentId: string; amountCents: number; createdAt: Date } }) => {
+        const row = { id: `top-${bag.topUps.length + 1}`, ...data };
+        bag.topUps.push(row);
+        const order = orders.find(item => item.id === data.orderId);
+        if (order) order.adminPaymentTopUps.push({ id: row.id, orderId: data.orderId, paymentId: data.paymentId, amountCents: data.amountCents });
+        return row;
       }
     },
     paymentEvent: { findUnique: async ({ where }: { where: { providerTransactionId?: string } }) => knownEvents.includes(where.providerTransactionId ?? "") ? { id: "existing-event" } : null },
@@ -331,6 +347,217 @@ test("cancelled orders are not revived and a client total cannot mark them paid"
   assert.equal(order.status, "CANCELLED");
 });
 
+test("a top-up is allowed on an already paid order and adds to the paid total", async () => {
+  const order = textOrder("order-a", "kl-text-window-20261113", 4, 4000);
+  order.status = "PAID";
+  order.paymentState = "VERIFIED";
+  order.paymentMethod = "VENMO";
+  order.verifiedAmountCents = 2000;
+  order.providerTransactionId = "VENMO20";
+  order.adminPaymentLink = { orderId: order.id, paymentId: "pay-existing", amountCents: 2000 };
+  const db = memory([order]);
+  const existingPayment = { id: "pay-existing", amountCents: 2000, providerTransactionId: "VENMO20", note: "first two loaves" };
+  db.bag.payments.push(existingPayment);
+  db.bag.links.push({ orderId: order.id, paymentId: "pay-existing", amountCents: 2000 });
+  assert.equal(canRecordTopUp(order), true);
+  const saved = await recordAdminTopUp(db.tx, {
+    orderId: order.id,
+    amountCents: 2000,
+    method: "CASH",
+    note: "customer paid the other $20 in cash",
+    providerTransactionId: null,
+    actor,
+    now
+  });
+  assert.equal(saved.amountCents, 2000);
+  assert.equal(saved.recordedPaidCents, 4000);
+  assert.equal(saved.balanceCents, 0);
+  assert.equal(saved.paymentId, "pay-2");
+  assert.equal(order.status, "PAID");
+  assert.equal(order.paymentState, "VERIFIED");
+  assert.equal(order.paymentMethod, "VENMO");
+  assert.equal(order.providerTransactionId, "VENMO20");
+  assert.equal(order.verifiedAmountCents, 4000);
+  assert.equal(order.totalCents, 4000);
+  assert.equal(order.inventoryRestored, false);
+  assert.deepEqual(order.adminPaymentLink, { orderId: order.id, paymentId: "pay-existing", amountCents: 2000 });
+  assert.deepEqual(db.bag.orderUpdates.map(update => update.data), [{ verifiedAmountCents: 4000 }]);
+  assert.deepEqual(db.bag.links, [{ orderId: order.id, paymentId: "pay-existing", amountCents: 2000 }]);
+  assert.equal(db.bag.payments[0], existingPayment);
+  assert.equal(db.bag.payments[1].amountCents, 2000);
+  assert.equal(db.bag.payments[1].method, "CASH");
+  assert.equal(db.bag.payments[1].providerTransactionId, null);
+  assert.equal(db.bag.payments[1].note, "customer paid the other $20 in cash");
+  assert.equal(db.bag.payments[1].actorId, actor.id);
+  assert.equal(db.bag.payments[1].actorEmail, actor.email);
+  assert.equal(db.bag.payments[1].actorName, actor.name);
+  assert.equal((db.bag.payments[1].createdAt as Date).toISOString(), now.toISOString());
+  assert.deepEqual(db.bag.topUps, [{ id: "top-1", orderId: order.id, paymentId: "pay-2", amountCents: 2000, createdAt: now }]);
+  assert.equal(db.bag.audits.length, 1);
+  const audit = db.bag.audits[0];
+  assert.equal(audit.action, "PAYMENT_TOP_UP");
+  assert.equal(audit.actorId, actor.id);
+  assert.equal(audit.actorEmail, actor.email);
+  assert.equal(audit.actorName, actor.name);
+  assert.equal(audit.note, "customer paid the other $20 in cash");
+  assert.equal(audit.paymentId, "pay-2");
+  assert.equal((audit.createdAt as Date).toISOString(), now.toISOString());
+  assert.equal((audit.before as { recordedPaidCents: number; status: string; paymentState: string }).recordedPaidCents, 2000);
+  assert.equal((audit.before as { status: string }).status, "PAID");
+  assert.equal((audit.before as { paymentState: string }).paymentState, "VERIFIED");
+  assert.equal((audit.after as { recordedPaidCents: number; verifiedAmountCents: number; status: string }).recordedPaidCents, 4000);
+  assert.equal((audit.after as { verifiedAmountCents: number }).verifiedAmountCents, 4000);
+  assert.equal((audit.after as { status: string }).status, "PAID");
+  assert.equal((audit.after as { providerTransactionId: string | null }).providerTransactionId, null);
+  assert.match(formatAuditSnapshot(audit.before), /Recorded paid \$20\.00 of \$40\.00/);
+  assert.match(formatAuditSnapshot(audit.after), /Recorded paid \$40\.00 of \$40\.00/);
+  assert.match(formatAuditSnapshot(audit.after), /Balance is zero/);
+  assert.match(formatAuditSnapshot(audit.after), /Cash/);
+  assert.equal(db.bag.emails, 0);
+  const extra = await recordAdminTopUp(db.tx, { orderId: order.id, amountCents: 500, method: "VENMO", note: "a later venmo, different id", providerTransactionId: "VENMO-EXTRA", actor, now });
+  assert.equal(extra.recordedPaidCents, 4500);
+  assert.equal(order.verifiedAmountCents, 4500);
+  assert.equal(order.status, "PAID");
+  assert.equal(order.providerTransactionId, "VENMO20");
+  assert.equal(db.bag.topUps.length, 2);
+  assert.equal(db.bag.emails, 0);
+  await assert.rejects(recordAdminPayment(db.tx, { orderIds: [order.id], amountCents: null, method: "CASH", note: null, providerTransactionId: null, actor, now }), /already marked paid/);
+  assert.equal(db.bag.audits.length, 2);
+  assert.equal(db.bag.emails, 0);
+});
+
+test("top-up requires a note, a positive amount, and an unused transaction id when one is given", async () => {
+  assert.throws(() => readTopUpPayment({ amountCents: 2000, method: "CASH", note: "   " }), /note is required/);
+  assert.throws(() => readTopUpPayment({ amountCents: 2000, method: "CASH" }), /note is required/);
+  for (const amountCents of [0, -1, 1.5, "2000", true, null]) assert.throws(() => readTopUpPayment({ amountCents, method: "CASH", note: "paid the rest" }), /positive whole number/);
+  assert.equal(readTopUpPayment({ amountCents: 2000, method: "cash", note: " paid the rest ", providerTransactionId: "" }).providerTransactionId, null);
+  const unpaid = textOrder("order-a", "kl-text-window-20261113", 2, 2000);
+  const unpaidDb = memory([unpaid]);
+  await assert.rejects(recordAdminTopUp(unpaidDb.tx, { orderId: unpaid.id, amountCents: 2000, method: "CASH", note: "too soon", providerTransactionId: null, actor, now }), /first payment/);
+  assert.equal(unpaidDb.bag.payments.length, 0);
+  assert.equal(unpaidDb.bag.audits.length, 0);
+  assert.equal(unpaid.status, "PENDING");
+  const order = textOrder("order-b", "kl-text-window-20261113", 4, 4000);
+  order.status = "PAID";
+  order.paymentState = "VERIFIED";
+  order.paymentMethod = "VENMO";
+  order.verifiedAmountCents = 2000;
+  order.providerTransactionId = "VENMO20";
+  const db = memory([order], ["EXISTING"]);
+  db.bag.payments.push({ id: "pay-existing", amountCents: 2000, providerTransactionId: "VENMO20", note: "first payment" });
+  await assert.rejects(recordAdminTopUp(db.tx, { orderId: order.id, amountCents: 0, method: "CASH", note: "zero", providerTransactionId: null, actor, now }), /positive whole number/);
+  await assert.rejects(recordAdminTopUp(db.tx, { orderId: order.id, amountCents: 2000, method: "CASH", note: "   ", providerTransactionId: null, actor, now }), /note is required/);
+  await assert.rejects(recordAdminTopUp(db.tx, { orderId: order.id, amountCents: 2000, method: "VENMO", note: "same venmo id", providerTransactionId: "venmo20", actor, now }), /already recorded/);
+  await assert.rejects(recordAdminTopUp(db.tx, { orderId: order.id, amountCents: 2000, method: "VENMO", note: "used on a receipt", providerTransactionId: "existing", actor, now }), /already recorded/);
+  assert.equal(db.bag.topUps.length, 0);
+  assert.equal(db.bag.audits.length, 0);
+  assert.equal(db.bag.emails, 0);
+  assert.equal(order.verifiedAmountCents, 2000);
+  assert.equal(order.status, "PAID");
+  const partial = await recordAdminTopUp(db.tx, { orderId: order.id, amountCents: 1000, method: "OTHER", note: "paid half of the balance", providerTransactionId: "cash-1000", actor, now });
+  assert.equal(partial.recordedPaidCents, 3000);
+  assert.equal(partial.balanceCents, 1000);
+  assert.equal(order.verifiedAmountCents, 3000);
+  assert.equal(order.status, "PAID");
+  assert.equal(order.paymentState, "VERIFIED");
+  assert.equal(db.bag.payments.at(-1)?.providerTransactionId, "CASH-1000");
+  assert.equal(db.bag.emails, 0);
+  const cancelled = textOrder("order-c", "kl-text-window-20261113", 1, 1000);
+  cancelled.status = "CANCELLED";
+  cancelled.verifiedAmountCents = 1000;
+  const blocked = memory([cancelled]);
+  await assert.rejects(recordAdminTopUp(blocked.tx, { orderId: cancelled.id, amountCents: 500, method: "CASH", note: "late cash", providerTransactionId: null, actor, now }), /stay closed/);
+  assert.equal(blocked.bag.audits.length, 0);
+  assert.equal(cancelled.status, "CANCELLED");
+});
+
+test("Venmo reconcile still requires a transaction id and a top-up does not email", () => {
+  const missing = paymentEvidenceSchema.safeParse({ action: "verify", amountCents: 2000, currency: "USD", receivedAt: new Date().toISOString(), attested: true });
+  assert.equal(missing.success, false);
+  const present = paymentEvidenceSchema.safeParse({ action: "verify", amountCents: 2000, currency: "USD", providerTransactionId: "venmo20", receivedAt: new Date().toISOString(), attested: true });
+  assert.equal(present.success, true);
+  const reconcile = readFileSync("components/AdminOrderActions.tsx", "utf8");
+  assert.match(reconcile, /name="providerTransactionId"[^>]*required/);
+  const topUpRoute = readFileSync("app/api/admin/orders/[id]/top-up/route.ts", "utf8");
+  const topUpDb = readFileSync("lib/admin-order-corrections-db.ts", "utf8");
+  assert.match(topUpRoute, /await requireAdmin\(\)/);
+  assert.match(topUpRoute, /readTopUpPayment/);
+  assert.doesNotMatch(topUpRoute, /queueEmail|renderOrderEmail|restoreInventory|inventoryLimit/);
+  assert.doesNotMatch(topUpDb.slice(topUpDb.indexOf("export async function recordAdminTopUp")), /queueEmail|renderOrderEmail|restoreInventory|inventoryLimit|status: "PAID"|paymentState: "VERIFIED"/);
+});
+
+test("reconcile cannot reuse a top-up transaction id, and a refund counts the top-up", async () => {
+  const receivedAt = "2026-11-14T15:00:00.000Z";
+  const checkedAt = new Date("2026-11-15T12:00:00Z");
+  type EvidenceOrder = {
+    id: string; status: string; paymentMethod: string; paymentState: string; paymentDueAt: Date; paymentReviewRequestedAt: null;
+    inventoryRestored: boolean; providerTransactionId: string | null; totalCents: number; currency: string; createdAt: Date; customerEmail: string;
+    items: []; paymentEvents: { id?: string; orderId: string; type: string; amountCents: number; currency: string; providerTransactionId: string; receivedAt: Date; restock: boolean }[];
+    adminPaymentTopUps: { amountCents: number; payment: { currency: string; amountCents: number } }[];
+  };
+  function paidOrder(): EvidenceOrder {
+    return {
+      id: "order-paid", status: "COMPLETED", paymentMethod: "VENMO", paymentState: "VERIFIED", paymentDueAt: new Date("2026-12-01T00:00:00Z"), paymentReviewRequestedAt: null,
+      inventoryRestored: false, providerTransactionId: "VENMO20", totalCents: 4000, currency: "USD", createdAt: new Date("2026-11-01T00:00:00Z"), customerEmail: "guest@example.com", items: [],
+      paymentEvents: [{ orderId: "order-paid", type: "VERIFIED", amountCents: 2000, currency: "USD", providerTransactionId: "VENMO20", receivedAt: new Date(receivedAt), restock: false }],
+      adminPaymentTopUps: [{ amountCents: 2000, payment: { currency: "USD", amountCents: 2000 } }]
+    };
+  }
+  function harness(order: EvidenceOrder, adminTxn: string | null) {
+    const emails: string[] = [];
+    const events: Record<string, unknown>[] = [];
+    const locks: string[] = [];
+    const tx = {
+      $executeRaw: async (_query: TemplateStringsArray, value?: unknown) => { locks.push(String(value ?? "")); return 1; },
+      order: {
+        findUniqueOrThrow: async () => structuredClone(order),
+        findUnique: async ({ where }: { where: { providerTransactionId?: string } }) => where.providerTransactionId && where.providerTransactionId === order.providerTransactionId ? { id: order.id } : null,
+        update: async ({ data }: { data: Record<string, unknown> }) => { Object.assign(order, data); return order; }
+      },
+      paymentEvent: {
+        findUnique: async ({ where }: { where: { providerTransactionId: string } }) => order.paymentEvents.find(event => event.providerTransactionId === where.providerTransactionId) ?? null,
+        create: async ({ data }: { data: EvidenceOrder["paymentEvents"][number] }) => { events.push(data); order.paymentEvents.push(data); return data; }
+      },
+      adminPayment: { findUnique: async ({ where }: { where: { providerTransactionId: string } }) => where.providerTransactionId === adminTxn ? { id: "pay-top" } : null },
+      emailJob: { upsert: async () => { emails.push("sent"); throw new Error("email"); } },
+      product: { update: async () => { throw new Error("stock"); } }
+    };
+    return { tx: tx as unknown as Prisma.TransactionClient, emails, events, locks };
+  }
+  const pending: EvidenceOrder = {
+    id: "order-new", status: "PENDING", paymentMethod: "VENMO", paymentState: "UNPAID", paymentDueAt: new Date("2026-12-01T00:00:00Z"), paymentReviewRequestedAt: null,
+    inventoryRestored: false, providerTransactionId: null, totalCents: 2000, currency: "USD", createdAt: new Date("2026-11-01T00:00:00Z"), customerEmail: "guest@example.com", items: [],
+    paymentEvents: [], adminPaymentTopUps: []
+  };
+  const blocked = harness(pending, "TOPUP20");
+  await assert.rejects(recordPaymentEvidence(blocked.tx, pending.id, { action: "verify", amountCents: 2000, currency: "USD", providerTransactionId: "topup20", receivedAt, attested: true }, "admin-1", checkedAt), /already recorded/);
+  assert.equal(blocked.events.length, 0);
+  assert.equal(blocked.emails.length, 0);
+  assert.equal(pending.status, "PENDING");
+  assert.equal(pending.paymentState, "UNPAID");
+  assert.ok(blocked.locks.includes("order:order-new"));
+  assert.ok(blocked.locks.includes("txn:TOPUP20"));
+  const partialOrder = paidOrder();
+  const partial = harness(partialOrder, "TOPUP20");
+  const refund = { action: "refund" as const, currency: "USD", receivedAt, attested: true as const, note: "sent back in Venmo", restock: false };
+  await assert.rejects(recordPaymentEvidence(partial.tx, partialOrder.id, { ...refund, amountCents: 4001, providerTransactionId: "refund-over" }, "admin-1", checkedAt), /Refund exceeds/);
+  assert.equal(partialOrder.paymentState, "VERIFIED");
+  await recordPaymentEvidence(partial.tx, partialOrder.id, { ...refund, amountCents: 2000, providerTransactionId: "refund-20" }, "admin-1", checkedAt);
+  assert.equal(partialOrder.paymentState, "REVIEW");
+  assert.equal(partialOrder.status, "COMPLETED");
+  assert.equal(partial.emails.length, 0);
+  const fullOrder = paidOrder();
+  const full = harness(fullOrder, "TOPUP20");
+  await recordPaymentEvidence(full.tx, fullOrder.id, { ...refund, amountCents: 4000, providerTransactionId: "refund-40", note: "all of it" }, "admin-1", checkedAt);
+  assert.equal(fullOrder.paymentState, "REFUNDED");
+  assert.equal(fullOrder.status, "COMPLETED");
+  assert.equal(full.events.length, 1);
+  assert.equal(full.emails.length, 0);
+  await recordPaymentEvidence(full.tx, fullOrder.id, { ...refund, amountCents: 4000, providerTransactionId: "refund-40", note: "all of it" }, "admin-1", checkedAt);
+  assert.equal(full.events.length, 1);
+  assert.equal(fullOrder.paymentState, "REFUNDED");
+});
+
 test("unauthenticated and non-admin requests are rejected before any write", async t => {
   environment(t);
   const user = { id: "admin-1", email: "admin@bakery.local", name: "Toby", role: "CUSTOMER" as "CUSTOMER" | "ADMIN", sessionVersion: 0 };
@@ -378,11 +605,25 @@ test("admin routes ignore a client total and record the admin identity", async t
   assert.equal(db.orders[0].verifiedAmountCents, 2000);
   assert.equal(db.bag.payments[0].method, "CASH");
   assert.equal(db.bag.emails, 0);
+  const topUp = await recordTopUp(new Request("https://bakery.example/api/admin/orders/order-a/top-up", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ amountCents: 500, method: "cash", note: "rest in cash", providerTransactionId: "", actorEmail: "attacker@example.com", actorId: "attacker" }) }), { params: Promise.resolve({ id: "order-a" }) });
+  assert.equal(topUp.status, 200);
+  const topUpBody = await topUp.json();
+  assert.equal(topUpBody.recordedPaidCents, 2500);
+  assert.equal(topUpBody.orderId, "order-a");
+  assert.equal(db.orders[0].status, "PAID");
+  assert.equal(db.orders[0].verifiedAmountCents, 2500);
+  assert.equal(db.orders[0].paymentState, "VERIFIED");
+  const topUpAudit = db.bag.audits.at(-1);
+  assert.equal(topUpAudit?.action, "PAYMENT_TOP_UP");
+  assert.equal(topUpAudit?.actorId, actor.id);
+  assert.equal(topUpAudit?.actorEmail, actor.email);
+  assert.notEqual(topUpAudit?.actorEmail, "attacker@example.com");
+  assert.equal(db.bag.emails, 0);
 });
 
 test("admin order forms do not ask for a deadline or a required transaction id", () => {
-  const single = renderToStaticMarkup(createElement(AppRouterContext.Provider, { value: router }, createElement(OrderCorrectionForms, { orderId: "order-a", currency: "USD", totalCents: 2000, deliveryFeeCents: 0, recordedPaidCents: null, allowMarkPaid: true, items: [{ id: "order-a-item", productName: "Plain Focaccia", quantity: 2, unitPriceCents: 1000 }] })));
-  const paid = renderToStaticMarkup(createElement(AppRouterContext.Provider, { value: router }, createElement(OrderCorrectionForms, { orderId: "order-a", currency: "USD", totalCents: 2000, deliveryFeeCents: 0, recordedPaidCents: 1000, allowMarkPaid: false, items: [{ id: "order-a-item", productName: "Plain Focaccia", quantity: 2, unitPriceCents: 1000 }] })));
+  const single = renderToStaticMarkup(createElement(AppRouterContext.Provider, { value: router }, createElement(OrderCorrectionForms, { orderId: "order-a", currency: "USD", totalCents: 2000, deliveryFeeCents: 0, recordedPaidCents: null, allowMarkPaid: true, allowTopUp: false, items: [{ id: "order-a-item", productName: "Plain Focaccia", quantity: 2, unitPriceCents: 1000 }] })));
+  const paid = renderToStaticMarkup(createElement(AppRouterContext.Provider, { value: router }, createElement(OrderCorrectionForms, { orderId: "order-a", currency: "USD", totalCents: 4000, deliveryFeeCents: 0, recordedPaidCents: 2000, allowMarkPaid: false, allowTopUp: true, items: [{ id: "order-a-item", productName: "Plain Focaccia", quantity: 4, unitPriceCents: 1000 }] })));
   const shared = renderToStaticMarkup(createElement(AppRouterContext.Provider, { value: router }, createElement(SharedPaymentForm, { orders: [{ id: "order-a", customerName: "Sam", totalCents: 2000, currency: "USD", summary: "2 × Plain Focaccia", textOrder: true }, { id: "order-b", customerName: "Sam", totalCents: 2000, currency: "USD", summary: "2 × Plain Focaccia", textOrder: true }] })));
   for (const html of [single, shared]) {
     const txn = html.match(/<input[^>]*name="providerTransactionId"[^>]*>/g) ?? [];
@@ -397,17 +638,25 @@ test("admin order forms do not ask for a deadline or a required transaction id",
   assert.match(single, /does not change a recorded payment/);
   assert.doesNotMatch(single, /name="amount"/);
   assert.match(paid, /Save quantity/);
-  assert.match(paid, /Recorded as paid \$10\.00/);
-  assert.match(paid, /\$20\.00/);
+  assert.match(paid, /Recorded as paid \$20\.00/);
+  assert.match(paid, /\$40\.00/);
   assert.match(paid, /not changed/);
   assert.doesNotMatch(paid, /Mark this order paid/);
+  assert.match(paid, /Record top-up payment/);
+  assert.match(paid, /Still due \$20\.00/);
+  assert.doesNotMatch(single, /Record top-up payment/);
+  const topUpTxn = paid.match(/<input[^>]*name="providerTransactionId"[^>]*>/g) ?? [];
+  assert.equal(topUpTxn.length, 1);
+  assert.equal(topUpTxn[0].includes("required"), false);
+  assert.match(paid, /<input(?=[^>]*name="note")(?=[^>]*required="")[^>]*>/);
+  assert.match(paid, /name="amount"/);
   assert.match(shared, /name="amount"/);
   assert.match(shared, /Text order/);
   assert.match(shared, /Select at least two orders/);
 });
 
 test("correction routes stay behind requireAdmin and do not send mail or edit windows", () => {
-  for (const file of ["app/api/admin/orders/[id]/items/route.ts", "app/api/admin/orders/[id]/mark-paid/route.ts", "app/api/admin/orders/payments/route.ts"]) {
+  for (const file of ["app/api/admin/orders/[id]/items/route.ts", "app/api/admin/orders/[id]/mark-paid/route.ts", "app/api/admin/orders/payments/route.ts", "app/api/admin/orders/[id]/top-up/route.ts"]) {
     const source = readFileSync(file, "utf8");
     assert.match(source, /await requireAdmin\(\)/);
     assert.doesNotMatch(source, /queueEmail|renderOrderEmail|orderWindow/);
@@ -416,10 +665,17 @@ test("correction routes stay behind requireAdmin and do not send mail or edit wi
   assert.doesNotMatch(db, /queueEmail|renderOrderEmail|orderWindow|paymentDueAt|kl-text-window/);
   assert.match(readFileSync("app/api/admin/orders/[id]/payment/route.ts", "utf8"), /recordPaymentEvidence/);
   assert.match(readFileSync("components/AdminOrderActions.tsx", "utf8"), /Reconcile Venmo payment/);
+  const ordersPage = readFileSync("app/admin/orders/page.tsx", "utf8");
+  assert.match(ordersPage, /allowTopUp=\{canRecordTopUp\(order\)\}/);
+  assert.match(ordersPage, /adminPaymentTopUps/);
+  assert.match(ordersPage, /data-testid="payment-top-up"/);
   const sql = readFileSync("prisma/migrations/20261109010000_admin_order_corrections/migration.sql", "utf8");
   for (const table of ["AdminPayment", "AdminPaymentOrder", "AdminOrderAudit"]) assert.match(sql, new RegExp(`CREATE TABLE IF NOT EXISTS "${table}"`));
   assert.doesNotMatch(sql, /\bUPDATE\s+"|\bDELETE\s+FROM\b|\bDROP\s+TABLE\b|\bTRUNCATE\b|ALTER TABLE "(Order|OrderItem|OrderWindow)"/);
   const scrub = readFileSync("scripts/build.mjs", "utf8");
-  for (const table of ["AdminOrderAudit", "AdminPaymentOrder", "AdminPayment"]) assert.match(scrub, new RegExp(`"${table}"`));
+  for (const table of ["AdminOrderAudit", "AdminPaymentOrder", "AdminPayment", "AdminPaymentTopUp"]) assert.match(scrub, new RegExp(`"${table}"`));
+  const topUpSql = readFileSync("prisma/migrations/20261115190000_admin_payment_top_up/migration.sql", "utf8");
+  assert.match(topUpSql, /CREATE TABLE IF NOT EXISTS "AdminPaymentTopUp"/);
+  assert.doesNotMatch(topUpSql, /\bUPDATE\s+"|\bDELETE\s+FROM\b|\bDROP\s+TABLE\b|\bTRUNCATE\b|ALTER TABLE "(Order|OrderItem|OrderWindow|AdminPayment|AdminPaymentOrder|AdminOrderAudit)"/);
   assert.throws(() => readSharedPayment({ orderIds: ["a", "a"], amountCents: 100, method: "VENMO" }), /only be selected once/);
 });

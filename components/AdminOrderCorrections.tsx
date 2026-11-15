@@ -22,7 +22,7 @@ async function postJson(url: string, method: "POST" | "PATCH", payload: object) 
   return body;
 }
 
-export function OrderCorrectionForms(props: { orderId: string; currency: string; totalCents: number; deliveryFeeCents: number; items: Item[]; recordedPaidCents: number | null; allowMarkPaid: boolean }) {
+export function OrderCorrectionForms(props: { orderId: string; currency: string; totalCents: number; deliveryFeeCents: number; items: Item[]; recordedPaidCents: number | null; allowMarkPaid: boolean; allowTopUp: boolean }) {
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [saved, setSaved] = useState(false);
@@ -77,6 +77,39 @@ export function OrderCorrectionForms(props: { orderId: string; currency: string;
     }
   }
 
+  async function recordTopUp(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (submitting.current || saved) return;
+    const form = new FormData(event.currentTarget);
+    const amountCents = parseDollarToCents(String(form.get("amount") ?? ""));
+    if (amountCents === null) {
+      setMessage("Enter a top-up amount greater than zero, with no more than two decimal places.");
+      return;
+    }
+    submitting.current = true;
+    setBusy(true);
+    setMessage("");
+    try {
+      const result = await postJson(`/api/admin/orders/${props.orderId}/top-up`, "POST", {
+        amountCents,
+        method: String(form.get("method") ?? ""),
+        note: String(form.get("note") ?? ""),
+        providerTransactionId: String(form.get("providerTransactionId") ?? "")
+      });
+      setSaved(true);
+      const paid = typeof result.recordedPaidCents === "number" ? formatMoney(result.recordedPaidCents) : formatMoney(amountCents);
+      setMessage(`Top-up recorded. Recorded paid is now ${paid}. The customer was not emailed, product stock was not changed, and the order status was left as it is.`);
+      router.refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not save this change.");
+    } finally {
+      submitting.current = false;
+      setBusy(false);
+    }
+  }
+
+  const stillDue = props.recordedPaidCents === null ? null : props.totalCents - props.recordedPaidCents;
+
   return <div className="mt-3 space-y-3 border-t-2 border-ink/20 pt-3 print:hidden">
     <div className="border-2 border-ink bg-crumb p-3">
       <h3 className="font-black uppercase tracking-wide">Edit quantity</h3>
@@ -104,6 +137,22 @@ export function OrderCorrectionForms(props: { orderId: string; currency: string;
         </form>;
       })}
     </div>
+    {props.allowTopUp ? <form onSubmit={event => { void recordTopUp(event); }} className="border-2 border-ink bg-crumb p-3">
+      <h3 className="font-black uppercase tracking-wide">Record top-up payment</h3>
+      <p className="mt-1 text-sm">Adds another payment to the amount already recorded. The amount has to be more than zero. A transaction ID is optional. A note is required. The customer is not emailed, product stock is not changed, and the order status stays as it is.</p>
+      <p className="mt-1 text-sm font-bold">Recorded paid {props.recordedPaidCents === null ? "unknown" : formatMoney(props.recordedPaidCents)} of {formatMoney(props.totalCents)} {props.currency}.{stillDue === null ? "" : stillDue > 0 ? ` Still due ${formatMoney(stillDue)}.` : stillDue < 0 ? ` Recorded paid is ${formatMoney(Math.abs(stillDue))} over the order total.` : " Balance is zero."}</p>
+      <fieldset disabled={busy || saved} className="mt-3 space-y-3 disabled:opacity-60">
+        <label className="block">Amount received
+          <input name="amount" type="text" inputMode="decimal" placeholder="0.00" autoComplete="off" required />
+        </label>
+        <label className="block">Payment method
+          <select name="method" required defaultValue="CASH">{ADMIN_PAYMENT_METHODS.map(method => <option key={method.value} value={method.value}>{method.label}</option>)}</select>
+        </label>
+        <label className="block">Transaction ID (optional)<input name="providerTransactionId" autoComplete="off" maxLength={160} /></label>
+        <label className="block">Note (required)<input name="note" type="text" maxLength={1000} autoComplete="off" required /></label>
+        <button className="btn-primary" type="submit">{busy ? "Saving..." : "Record top-up payment"}</button>
+      </fieldset>
+    </form> : null}
     {props.allowMarkPaid ? <form onSubmit={event => { void markPaid(event); }} className="border-2 border-ink bg-crumb p-3">
       <h3 className="font-black uppercase tracking-wide">Mark this order paid</h3>
       <p className="mt-1 text-sm">Records {formatMoney(props.totalCents)} {props.currency} as paid. A transaction ID and an open payment deadline are not required. The customer is not emailed, and the Reconcile Venmo form is unchanged.</p>
