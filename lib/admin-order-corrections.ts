@@ -162,6 +162,18 @@ export function readSinglePayment(body: Record<string, unknown>) {
   };
 }
 
+/** Extra payment on an order that already has one. The amount is whatever was received. A note is required. A transaction ID is optional. */
+export function readTopUpPayment(body: Record<string, unknown>) {
+  const note = readNote(body.note);
+  if (!note) throw new CorrectionError("A note is required for a top-up payment.");
+  return {
+    amountCents: parseAmountCents(body.amountCents),
+    method: parsePaymentMethod(body.method),
+    note,
+    providerTransactionId: readTransactionId(body.providerTransactionId)
+  };
+}
+
 /** Payment recording only. A paid or verified order must not get a second payment. */
 export function correctionBlockReason(order: { status: string; paymentState: string; inventoryRestored: boolean; hasRecordedPayment: boolean }) {
   if (order.hasRecordedPayment || order.paymentState === "VERIFIED" || order.status === "PAID") return "This order is already marked paid.";
@@ -192,6 +204,22 @@ export function canEditQuantity(order: { status: string; paymentState: string })
   return quantityEditBlockReason(order) === null;
 }
 
+/**
+ * A top-up is only for an order that already has a recorded payment amount.
+ * Cancelled and refunded orders stay closed. The first payment is still recorded
+ * through Mark paid, a shared payment, or Reconcile Venmo.
+ */
+export function topUpBlockReason(order: { status: string; paymentState: string; verifiedAmountCents?: number | null; adminPaymentLink?: { amountCents: number } | null }) {
+  if (order.status === "CANCELLED") return "Cancelled orders stay closed and cannot be changed here.";
+  if (order.paymentState === "REFUNDED") return "This order was refunded and cannot be changed here.";
+  if (recordedPaidCents(order) === null) return "Record the first payment before adding a top-up.";
+  return null;
+}
+
+export function canRecordTopUp(order: { status: string; paymentState: string; verifiedAmountCents?: number | null; adminPaymentLink?: { amountCents: number } | null }) {
+  return topUpBlockReason(order) === null;
+}
+
 /** Amount already recorded for this order, not the shared payment's combined total. */
 export function recordedPaidCents(order: { verifiedAmountCents?: number | null; adminPaymentLink?: { amountCents: number } | null }) {
   if (typeof order.verifiedAmountCents === "number") return order.verifiedAmountCents;
@@ -219,6 +247,15 @@ export function describePaymentMatch(amountCents: number | null, totals: number[
 export function formatAuditSnapshot(value: unknown) {
   if (!value || typeof value !== "object") return "Not recorded";
   const record = value as Record<string, unknown>;
+  if (record.topUp === true && typeof record.recordedPaidCents === "number" && typeof record.orderTotalCents === "number") {
+    const balance = record.orderTotalCents - record.recordedPaidCents;
+    const amount = typeof record.topUpAmountCents === "number" ? ` Top-up ${formatMoney(record.topUpAmountCents)}.` : "";
+    const method = typeof record.method === "string" ? ` ${paymentMethodLabel(record.method)}.` : "";
+    const payment = typeof record.paymentId === "string" ? ` Payment ${record.paymentId}.` : "";
+    const txn = typeof record.providerTransactionId === "string" ? ` Transaction ${record.providerTransactionId}.` : "";
+    const balanceLabel = balance === 0 ? "Balance is zero." : balance > 0 ? `Balance still due ${formatMoney(balance)}.` : `Recorded paid is ${formatMoney(Math.abs(balance))} over the order total.`;
+    return `Recorded paid ${formatMoney(record.recordedPaidCents)} of ${formatMoney(record.orderTotalCents)}. ${balanceLabel}${amount}${method}${payment}${txn}`;
+  }
   if (typeof record.quantity === "number" && typeof record.unitPriceCents === "number" && typeof record.lineTotalCents === "number" && typeof record.orderTotalCents === "number") {
     const name = typeof record.productName === "string" ? record.productName : "Item";
     const paid = typeof record.recordedPaidCents === "number" ? paymentTotalDifference(record.recordedPaidCents, Number(record.orderTotalCents)) : null;
@@ -247,6 +284,21 @@ export function sharedPaymentSummary(payment: {
   const txn = payment.providerTransactionId ? ` Transaction ${payment.providerTransactionId}.` : "";
   const note = payment.note ? ` Note: ${payment.note}` : "";
   return `${paymentMethodLabel(payment.method)} payment ${payment.id} for ${formatMoney(payment.amountCents)}.${cover}${txn}${note}`;
+}
+
+export function topUpPaymentSummary(payment: {
+  id: string;
+  amountCents: number;
+  method: string;
+  note: string | null;
+  providerTransactionId: string | null;
+  actorName: string | null;
+  actorEmail: string | null;
+}) {
+  const who = payment.actorName || payment.actorEmail || "an admin";
+  const txn = payment.providerTransactionId ? ` Transaction ${payment.providerTransactionId}.` : " No transaction ID.";
+  const note = payment.note ? ` Note: ${payment.note}` : "";
+  return `Top-up ${paymentMethodLabel(payment.method)} payment ${payment.id} for ${formatMoney(payment.amountCents)}, recorded by ${who}.${txn}${note}`;
 }
 
 export function toPublicCorrectionError(error: unknown) {

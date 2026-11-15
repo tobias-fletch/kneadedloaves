@@ -180,6 +180,7 @@ model Order {
   receiptTokenHash       String?         @unique
   inventoryRestored      Boolean         @default(false)
   adminPaymentLink      AdminPaymentOrder?
+  adminPaymentTopUps    AdminPaymentTopUp[]
   adminAudits           AdminOrderAudit[]
   user                  User?           @relation(fields: [userId], references: [id])
   deliveryZone          DeliveryZone?   @relation(fields: [deliveryZoneId], references: [id])
@@ -441,7 +442,22 @@ model AdminPayment {
   actorName             String?
   createdAt             DateTime            @default(now())
   coveredOrders         AdminPaymentOrder[]
+  topUps                AdminPaymentTopUp[]
   audits                AdminOrderAudit[]
+}
+
+/// Extra payment recorded after an order already has one. The first payment stays
+/// on AdminPaymentOrder (one row per order). This link does not replace it.
+model AdminPaymentTopUp {
+  id          String       @id @default(cuid())
+  orderId     String
+  paymentId   String       @unique
+  amountCents Int
+  createdAt   DateTime     @default(now())
+  order       Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  payment     AdminPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
 }
 
 model AdminPaymentOrder {
